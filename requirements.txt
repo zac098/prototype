@@ -1,0 +1,6 @@
+PyMuPDF==1.26.4
+opencv-python==4.11.0.86
+pytesseract==0.3.13
+Pillow==13.0.0
+numpy==2.2.6
+PySide6-Essentials==6.12.0

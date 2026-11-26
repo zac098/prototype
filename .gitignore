@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+build/
+dist/
+*.spec
+installer_output/
+release_pronta/
+*.part
+.venv/
+PUBLICAR_NO_GITHUB/
+
+.venv_build/
+.venv_run/
+ENTREGA_EMPRESA/
+RDF_DELIVERY_PACKAGE/
+
+# Documentos reais (dados pessoais/saude - LGPD): nunca versionar
+folhas para testar o programa/
+pdf pra testar programa/
+resultados/
+.ruff_cache/
+*.egg-info/
+
+# Configuração local do Tesseract (cada máquina tem o seu caminho)
+tesseract_path.txt
+arquivos para testar/

@@ -1,0 +1,4 @@
+# Scripts do Windows precisam de CRLF em todas as linhas: o cmd.exe falha ao achar rotulos (goto) em .bat com LF puro.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.iss text eol=crlf

@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rdf"
+description = "RDF: ferramentas de PDF (unir, dividir, comprimir, converter, proteger...) e renomeação de folhas de ponto por OCR"
+readme = "README.md"
+requires-python = ">=3.10"
+dynamic = ["version", "dependencies", "optional-dependencies"]
+
+[project.scripts]
+rdf = "rdf.__main__:main"
+
+[tool.setuptools]
+packages = ["rdf", "rdf.core", "rdf.pdftools", "rdf.qt"]
+
+[tool.setuptools.dynamic]
+# Uma única fonte para cada informação: a versão fica em rdf/__init__.py e as
+# dependências nos arquivos requirements*.txt (também usados pelo packaging/build_package.bat).
+version = { attr = "rdf.APP_VERSION" }
+dependencies = { file = ["requirements.txt"] }
+optional-dependencies.build = { file = ["requirements-build.txt"] }
+optional-dependencies.dev = { file = ["requirements-dev.txt"] }
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [".venv_build", "pdf pra testar programa", "resultados"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]  # linhas longas: o formatador quebra o que dá; textos longos ficam
+
+[tool.ruff.lint.per-file-ignores]
+# Os testes importam _source primeiro para colocar a raiz do projeto no sys.path.
+"tests/*" = ["E402", "F401", "I001"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rdf"]
+
+[tool.coverage.run]
+source = ["rdf"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

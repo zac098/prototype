@@ -1,0 +1,27 @@
+@echo off
+setlocal
+cd /d "%~dp0"
+set "VENV=%~dp0.venv_run"
+if not exist "%VENV%\Scripts\pythonw.exe" (
+    echo Preparando o RDF pela primeira vez ^(pode levar alguns minutos^)...
+    set "CRIADO="
+    rem Prefere versoes estaveis: as bibliotecas fixadas ainda nao existem para Python muito novo.
+    for %%V in (3.13 3.12 3.11 3.10) do (
+        if not defined CRIADO (
+            py -%%V -m venv "%VENV%" >nul 2>&1
+            if not errorlevel 1 set "CRIADO=1"
+        )
+    )
+    if not defined CRIADO python -m venv "%VENV%"
+    if errorlevel 1 goto ERRO
+    "%VENV%\Scripts\python.exe" -m pip install --upgrade pip
+    "%VENV%\Scripts\python.exe" -m pip install -r requirements.txt
+    if errorlevel 1 goto ERRO
+)
+start "" "%VENV%\Scripts\pythonw.exe" rdf_app.py
+exit /b 0
+:ERRO
+echo.
+echo Nao foi possivel preparar o RDF. Confira se o Python 3.10+ esta instalado.
+pause
+exit /b 1
