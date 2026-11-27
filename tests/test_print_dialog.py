@@ -309,3 +309,37 @@ class EdgeLikeOptionsTests(QtPrintCase):
         self.assertIn('Ctrl+P', page.message.text())
         page.discard_work()  # sair do Unir PDF apaga a cópia
         self.assertFalse(copy.exists())
+
+
+class PrintGoesToEdgeTests(QtPrintCase):
+    def test_with_edge_installed_print_opens_edge_directly(self):
+        from rdf.core import settings
+        from rdf.pdftools.registry import TOOLS_BY_ID
+        from rdf.qt import print_dialog
+        from rdf.qt.merge_page import MergePage
+
+        settings.reset()
+        patch = mock.patch.object(config, 'CONVERT_DIR', self.tmp / 'temp')
+        patch.start()
+        self.addCleanup(patch.stop)
+        page = MergePage(TOOLS_BY_ID['merge'])
+        self.addCleanup(page.deleteLater)
+        page.add_paths([str(make_pdf(self.tmp / 'a.pdf', pages=1)), str(make_pdf(self.tmp / 'b.pdf', pages=2))])
+        launched = []
+        with (
+            mock.patch.object(print_dialog, 'edge_path', return_value='msedge.exe'),
+            mock.patch('subprocess.Popen', side_effect=launched.append),
+            mock.patch.object(page, 'make_preview_dialog') as preview,
+        ):
+            page.print_files()
+        preview.assert_not_called()  # nada de tela intermediária
+        self.assertEqual(launched[0][0], 'msedge.exe')
+        from urllib.parse import unquote, urlparse
+
+        pdf = Path(unquote(urlparse(launched[0][1]).path))
+        with fitz.open(pdf) as document:
+            self.assertEqual(document.page_count, 3)  # os dois arquivos juntados, na ordem
+        self.assertIn('Ctrl+P', page.message.text())
+        self.assertFalse(page.print_folder.exists())  # a junção temporária foi apagada
+        page.discard_work()
+        self.assertFalse(pdf.exists())  # e a cópia do Edge some ao sair do Unir PDF

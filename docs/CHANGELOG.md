@@ -1,5 +1,8 @@
 # Histórico de alterações
 
+## 4.0.2
+- "Unir PDF" > **Imprimir…** abre o PDF juntado direto no Microsoft Edge, para imprimir pela tela de impressão dele (Ctrl+P), com prévia e todas as opções. A cópia fica na pasta temporária do RDF e é apagada ao sair do "Unir PDF" ou fechar o app. Sem o Edge no computador, abre a tela de impressão do próprio RDF.
+
 ## 4.0.1
 - Removida a ferramenta "Várias páginas por folha": era uma ferramenta de impressão, e imprimir fica no "Unir PDF".
 - **Tela de impressão do RDF, com prévia**: a janela moderna do Windows 11 não mostra prévia para o RDF ("este aplicativo não dá suporte à visualização de impressão"). Agora o "Imprimir…" abre uma tela própria com a prévia de cada folha e as opções de sempre: impressora, cópias (agrupar ou não), páginas, orientação, papel (A4, Carta, Ofício, A3), páginas por folha (1, 2, 4, 6 ou 9), escala (ajustar, tamanho real ou personalizada em %), margens, colorido ou preto e branco, frente e verso e qualidade (150, 300 ou 600 dpi), as mesmas opções da tela de impressão do Edge. A prévia é desenhada pelo mesmo código que desenha na impressora: o que aparece é o que sai. A janela do Windows continua a um botão de distância, para os ajustes do driver, e "Abrir no Microsoft Edge" abre o PDF juntado no Edge para quem preferir imprimir por ele (a cópia temporária é apagada ao sair do Unir PDF).

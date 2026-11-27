@@ -10,7 +10,7 @@ ISS = (ROOT / 'packaging' / 'installer.iss').read_text(encoding='utf-8')
 
 class ReleaseTests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(APP_VERSION, '4.0.1')
+        self.assertEqual(APP_VERSION, '4.0.2')
 
     def test_installer_matches_the_app(self):
         self.assertIn(f'#define MyAppVersion "{APP_VERSION}"', ISS)
