@@ -48,10 +48,10 @@ conferir que o arquivo baixado é o original.
 ### Publicar uma versão nova
 
 1. Troque `APP_VERSION` em `rdf/__init__.py` (e acrescente a versão no `docs/CHANGELOG.md`).
-2. Crie a tag com a mesma versão e envie: `git tag v4.0.1` e `git push origin v4.0.1`.
-3. O workflow **Instalador** (`.github/workflows/release.yml`) monta os `.exe` num Windows do GitHub e cria a release,
-   com as notas da versão tiradas do `docs/CHANGELOG.md`. Também dá para rodá-lo à mão em Actions > Instalador
-   (só gera os arquivos, sem release).
+2. Leve a mudança para a `main` (merge do PR). O workflow **Instalador** (`.github/workflows/release.yml`) vê que
+   essa versão ainda não tem release, monta os `.exe` num Windows do GitHub e cria a tag `vX.Y.Z` e a release, com as
+   notas da versão tiradas do `docs/CHANGELOG.md`. Enviar a tag à mão (`git push origin v4.0.1`) também funciona.
+3. Para só gerar os arquivos, sem release: Actions > Instalador > Run workflow.
 
 ## Requisitos
 

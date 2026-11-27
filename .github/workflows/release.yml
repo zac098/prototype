@@ -2,11 +2,13 @@ name: Instalador
 
 # Gera o RDF.exe (PyInstaller) e o RDF_Setup.exe (Inno Setup) numa máquina Windows, com o Tesseract (por e eng)
 # embutido, como o packaging/build_package.bat faz no computador de quem empacota.
-# - Tag "v4.0.0" (igual à APP_VERSION): cria a release no GitHub com os dois .exe e o SHA-256.
+# - Na main, com uma APP_VERSION que ainda não tem release (ou com uma tag "v4.0.0" enviada à mão): cria a tag e a
+#   release no GitHub com os dois .exe e o SHA-256. Versão já publicada: não faz nada.
 # - Manual (Actions > Instalador > Run workflow) ou num PR que mexa no empacotamento: só gera os arquivos para baixar.
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
   pull_request:
@@ -34,6 +36,8 @@ jobs:
 
       - name: Versão
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $version = python -c "import rdf; print(rdf.APP_VERSION)"
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
@@ -41,6 +45,15 @@ jobs:
           }
           "APP_VERSION=$version" >> $env:GITHUB_ENV
           Write-Host "Versão: $version"
+          # Na main: publica só se esta versão ainda não tem release (um push qualquer não refaz a 4.0.0).
+          $publish = $env:GITHUB_REF_TYPE -eq 'tag'
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/main') {
+            gh release view "v$version" --repo $env:GITHUB_REPOSITORY *> $null
+            $publish = $LASTEXITCODE -ne 0
+            $global:LASTEXITCODE = 0
+          }
+          "PUBLISH=$publish" >> $env:GITHUB_ENV
+          Write-Host "Publicar release: $publish"
 
       - name: Tesseract OCR (português e inglês)
         shell: pwsh
@@ -126,9 +139,11 @@ jobs:
           path: entrega/*
 
       - name: Publicar a release
-        if: github.ref_type == 'tag'
+        if: env.PUBLISH == 'True'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.APP_VERSION }}
+          target_commitish: ${{ github.sha }}
           name: RDF ${{ env.APP_VERSION }}
           body_path: notas.md
           files: entrega/*
