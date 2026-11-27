@@ -90,6 +90,8 @@ def analyze_pdf(path, page_index=0, document_text=None):
     full_page_checked = False
     headers = render_header_candidates(path, page_index)
     for angle, header in headers:
+        if _has_complete(attempts):
+            break  # o topo já deu matrícula, nome e mês com boa confiança: o rodapé não precisa ser lido
         if document_text is not None:
             gray = cv2.cvtColor(header, cv2.COLOR_RGB2GRAY)
             binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
@@ -110,7 +112,8 @@ def analyze_pdf(path, page_index=0, document_text=None):
                     category = classify_extra_document(path, header_text)
                     if category and max(scores['Atestados'], scores['Declarações']) >= 6:
                         return None, 'Documento', 0
-                    if not full_page_checked:
+                    # Com um cabeçalho de folha já lido, não é atestado nem declaração: a página inteira fica de fora.
+                    if not full_page_checked and not attempts:
                         full_page_checked = True
                         document_text['fast_page'] = _document_search_text(path, max_pages=1)
                         category = classify_extra_document(path, document_text['fast_page'])
@@ -120,6 +123,8 @@ def analyze_pdf(path, page_index=0, document_text=None):
                 raise RuntimeError(TESSERACT_MISSING_MESSAGE) from None
         proc = preprocess(header)
         for image, config in ((proc, '--oem 3 --psm 6'), (proc, '--oem 3 --psm 11'), (header, '--oem 3 --psm 6')):
+            if _has_complete(attempts):
+                break  # uma leitura completa basta: as outras variações só custariam tempo
             try:
                 data = _image_to_data(image, config)
                 text = ' '.join(x for x in data['text'] if x.strip())
@@ -156,6 +161,12 @@ def analyze_pdf(path, page_index=0, document_text=None):
 def _is_complete(parsed, conf, month_found=False):
     """Matrícula, nome e mês lidos com confiança suficiente para o status OK."""
     return bool(parsed[0] and parsed[1] and (parsed[2] or month_found) and is_ready_confidence(conf))
+
+
+def _has_complete(attempts):
+    """Alguma leitura já basta para o status OK (o mês de uma leitura vale para as outras)."""
+    month_found = any(parsed[2] for parsed, _conf, _angle in attempts)
+    return any(_is_complete(parsed, conf, month_found) for parsed, conf, _angle in attempts)
 
 
 def _rescue_header_attempts(path, page_index, headers):

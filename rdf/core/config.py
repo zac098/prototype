@@ -154,8 +154,16 @@ def tesseract_candidates(base_dir):
     ]
 
 
+OMP_THREADS = '1'  # o RDF já lê vários arquivos em paralelo: cada Tesseract com uma thread não disputa a CPU
+
+
 def configure_tesseract(base_dir):
-    """Localiza o Tesseract instalado no usuario ou em pastas comuns, sem admin."""
+    """Localiza o Tesseract instalado no usuario ou em pastas comuns, sem admin.
+
+    Também limita cada Tesseract a uma thread do OpenMP (se o usuário não escolheu outro valor): com quatro leituras
+    em paralelo, cada uma criando uma thread por núcleo, as threads disputavam a CPU e a leitura ficava dezenas de
+    vezes mais lenta. É a recomendação da documentação do Tesseract para rodar vários ao mesmo tempo."""
+    os.environ.setdefault('OMP_THREAD_LIMIT', OMP_THREADS)
     for exe in tesseract_candidates(base_dir):
         if exe and os.path.isfile(exe):
             pytesseract.pytesseract.tesseract_cmd = exe
