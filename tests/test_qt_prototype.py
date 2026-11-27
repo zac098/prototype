@@ -262,7 +262,7 @@ class ToolPageTests(QtTestCase):
         page.add_paths([str(make_pdf(self.tmp / 'a.pdf', 2)), str(make_pdf(self.tmp / 'b.pdf', 3))])
         self.assertEqual(page.counter.text(), '2 arquivos  ·  5 páginas')
         self.assertEqual(page.tree.topLevelItemCount(), 2)
-        self.assertFalse(page.preview.pixmap().isNull())
+        self.wait_until(lambda: not page.preview.pixmap().isNull())  # desenhada em segundo plano
 
     def test_duplicates_are_ignored_and_files_can_be_moved_and_removed(self):
         page = self.window.open_tool('merge')

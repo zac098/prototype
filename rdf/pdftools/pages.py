@@ -63,3 +63,25 @@ def parse_page_groups(text, total):
     if not groups:
         raise PageRangeError('Informe os intervalos, por exemplo: 1-3, 4-6, 7-')
     return groups
+
+
+def format_page_ranges(indexes, keep_order=False):
+    """O contrário de parse_page_ranges: índices (base 0) viram "1-3, 5, 8".
+
+    Sem keep_order, as páginas são ordenadas e repetições somem (seleção). Com keep_order, a sequência é mantida e só
+    trechos crescentes e seguidos viram intervalo (ordem personalizada): [2, 0, 1, 3] -> "3, 1-2, 4"."""
+    numbers = [int(index) + 1 for index in indexes]
+    if not keep_order:
+        numbers = sorted(set(numbers))
+    parts = []
+    start = previous = None
+    for number in numbers:
+        if previous is not None and number == previous + 1:
+            previous = number
+            continue
+        if start is not None:
+            parts.append(str(start) if start == previous else f'{start}-{previous}')
+        start = previous = number
+    if start is not None:
+        parts.append(str(start) if start == previous else f'{start}-{previous}')
+    return ', '.join(parts)

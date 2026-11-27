@@ -4,6 +4,7 @@ Tudo é montado a partir do catálogo (rdf.pdftools.registry): cada Tool descrev
 campos, valida, pergunta onde salvar e executa a operação em uma thread separada (a janela não trava).
 """
 
+import re
 import shutil
 import threading
 import uuid
@@ -11,10 +12,10 @@ import weakref
 from pathlib import Path
 from types import SimpleNamespace
 
-import fitz
 from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QImage, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QDesktopServices, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -34,18 +35,38 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from rdf.core import config
+from rdf.core import config, settings
 from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import jobs, ops, sources
 from rdf.qt.busy import Responsive
+from rdf.qt.page_picker import PagePicker
+from rdf.qt.thumbnails import ThumbnailLoader
 from rdf.qt.widgets import BackButton, SmoothScrollArea, ToolTile
 
 PREVIEW_SIZE = (230, 300)
 OPTIONS_WIDTH = 380
 OPTIONS_NARROW = 300
 NARROW_BELOW = 960  # abaixo desta largura a prévia some e as opções ficam mais estreitas
+PICKER_HINTS = {
+    'remove': 'Clique nas páginas que serão removidas (Ctrl+A marca todas).',
+    'extract': 'Clique nas páginas que vão para o novo PDF (Ctrl+A marca todas).',
+}
 
-_last_folder = ''  # a última pasta usada nas janelas de escolher arquivos (vale enquanto o app está aberto)
+
+def natural_key(path):
+    """Ordem "humana" de nomes: "folha 2" vem antes de "folha 10"."""
+    name = Path(path).name.casefold()
+    return [int(part) if part.isdigit() else part for part in re.split(r'(\d+)', name)]
+
+
+def last_folder():
+    """A última pasta usada nas janelas de escolher arquivos (lembrada entre uma vez e outra que o app abre)."""
+    folder = settings.current().get('last_folder')
+    return folder if folder and Path(folder).is_dir() else ''
+
+
+def remember_folder(path):
+    settings.current().set('last_folder', str(Path(path).parent))
 
 
 def make_card():
@@ -97,6 +118,38 @@ class _Worker(QObject):
         self.finished.emit(result)
 
 
+class _OrderedTree(QTreeWidget):
+    """Lista de arquivos que se reordena arrastando (Unir, Imagem para PDF). Arquivos vindos de fora (Explorer)
+    continuam indo para a tela, que os adiciona."""
+
+    reordered = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self.setDropIndicatorShown(True)
+
+    def dragEnterEvent(self, event):
+        if event.source() is self:
+            super().dragEnterEvent(event)
+        else:
+            event.ignore()  # arquivos do Explorer: quem trata é a tela
+
+    def dragMoveEvent(self, event):
+        if event.source() is self:
+            super().dragMoveEvent(event)
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.source() is not self:
+            event.ignore()
+            return
+        super().dropEvent(event)
+        self.reordered.emit()
+
+
 class ToolPage(QWidget):
     backRequested = Signal()
     save_label = None  # o trabalho já é salvo ao processar; só o renomeador oferece "Exportar agora"
@@ -122,6 +175,13 @@ class ToolPage(QWidget):
         self.reject_reasons = {}
         self._thread = None
         self._worker = None
+        self._picker_source = None
+        self._syncing_pages = False
+        self.picker = None
+        self.preview_path = None
+        self.preview_loader = ThumbnailLoader(self)
+        self.preview_loader.ready.connect(self._on_preview_image)
+        self.preview_loader.failed.connect(lambda *_args: self.preview.setText('Sem prévia'))
         self.setAcceptDrops(True)
         for sequence, handler in (
             ('Ctrl+O', self.add_dialog),
@@ -138,6 +198,7 @@ class ToolPage(QWidget):
         self.options_card = self._build_options_card()
         layout.addWidget(self.files_card, 1)
         layout.addWidget(self.options_card, 0)
+        self._connect_picker()
         self.refresh_files()
 
     # ---- montagem ------------------------------------------------------------------------
@@ -229,6 +290,11 @@ class ToolPage(QWidget):
             self.down_button.clicked.connect(lambda: self.move(1))
             buttons.addWidget(self.up_button)
             buttons.addWidget(self.down_button)
+            self.sort_button = small_button('A→Z')
+            self.sort_button.setToolTip('Ordenar por nome ("folha 2" antes de "folha 10")')
+            self.sort_button.setAccessibleName('Ordenar por nome')
+            self.sort_button.clicked.connect(self.sort_by_name)
+            buttons.addWidget(self.sort_button)
         self.remove_button = small_button('Remover')
         self.remove_button.setToolTip('Atalho: Delete')
         self.remove_button.clicked.connect(self.remove_selected)
@@ -245,7 +311,11 @@ class ToolPage(QWidget):
 
         body = QHBoxLayout()
         body.setSpacing(14)
-        self.tree = QTreeWidget()
+        self.reorderable = tool.mode == 'combine' or tool.ordered
+        self.tree = _OrderedTree() if self.reorderable else QTreeWidget()
+        if self.reorderable:
+            self.tree.reordered.connect(self.sync_order_from_tree)
+            self.tree.setToolTip('Arraste os arquivos para mudar a ordem')
         self.show_kind = tool.any_format and tool.inputs == 'pdf'  # a lista mostra o tipo: PDF, Imagem, Word...
         labels = ['Arquivo'] + (['Tipo'] if self.show_kind else [])
         labels += ['Dimensões' if tool.inputs == 'image' else 'Páginas', 'Tamanho']
@@ -262,7 +332,19 @@ class ToolPage(QWidget):
             header.setSectionResizeMode(column, header.ResizeMode.ResizeToContents)
         self.tree.setAccessibleName('Arquivos escolhidos')
         self.tree.itemSelectionChanged.connect(self.on_select)
-        body.addWidget(self.tree, 1)
+        if tool.page_picker:
+            # Uma página por miniatura ocupa o lugar da prévia: a lista do arquivo fica baixa, as páginas embaixo.
+            column = QVBoxLayout()
+            column.setSpacing(10)
+            self.tree.setMaximumHeight(84)
+            column.addWidget(self.tree)
+            self.picker = PagePicker(
+                tool.page_picker[0], PICKER_HINTS.get(tool.id, ''), marks_removal=tool.id == 'remove'
+            )
+            column.addWidget(self.picker, 1)
+            body.addLayout(column, 1)
+        else:
+            body.addWidget(self.tree, 1)
 
         self.preview_side = QWidget()
         side = QVBoxLayout(self.preview_side)
@@ -281,6 +363,8 @@ class ToolPage(QWidget):
         side.addWidget(self.preview_caption)
         side.addStretch(1)
         body.addWidget(self.preview_side, 0, Qt.AlignTop)
+        if self.picker is not None:
+            self.preview_side.hide()  # as miniaturas já mostram as páginas
         layout.addLayout(body, 1)
         return page
 
@@ -358,10 +442,20 @@ class ToolPage(QWidget):
         self.open_folder_button = QPushButton('Abrir pasta')
         self.open_folder_button.clicked.connect(lambda: self.open_path(self.output_folder))
         self.open_file_button = QPushButton('Abrir arquivo')
+        self.open_file_button.setProperty('variant', 'success')
         self.open_file_button.clicked.connect(lambda: self.open_path(self.output_file))
-        for button in (self.open_folder_button, self.open_file_button):
+        self.again_button = QPushButton('Começar de novo')
+        self.again_button.setProperty('variant', 'quiet')
+        self.again_button.setToolTip('Limpa a lista para processar outros arquivos')
+        self.again_button.clicked.connect(self.start_over)
+        result_row = QHBoxLayout()
+        result_row.setSpacing(8)
+        for button in (self.open_file_button, self.open_folder_button):
             button.hide()
-            layout.addWidget(button)
+            result_row.addWidget(button, 1)
+        layout.addLayout(result_row)
+        self.again_button.hide()
+        layout.addWidget(self.again_button)
         return card
 
     def build_action_extras(self):
@@ -418,6 +512,53 @@ class ToolPage(QWidget):
         current = {key: getter() for key, getter in self.getters.items()}
         for frame, option in self.option_frames.values():
             frame.setVisible(jobs.option_visible(option, current))
+        if self.picker is not None and self.tool.page_picker[1] in self.option_frames:
+            _frame, option = self.option_frames[self.tool.page_picker[1]]
+            self.picker.setVisible(jobs.option_visible(option, current))
+
+    # ---- miniaturas das páginas ----------------------------------------------------------
+    def _connect_picker(self):
+        """Liga as miniaturas ao campo de páginas: um muda o outro, sem um ficar devolvendo para o outro."""
+        if self.picker is None:
+            return
+        field = self.widgets.get(self.tool.page_picker[1])
+        if field is None:
+            return
+        self.picker.changed.connect(self._on_picker_changed)
+        field.textChanged.connect(self._on_page_field_changed)
+
+    def _on_picker_changed(self, text):
+        field = self.widgets[self.tool.page_picker[1]]
+        self._syncing_pages = True
+        try:
+            field.setText(text)
+        finally:
+            self._syncing_pages = False
+
+    def _on_page_field_changed(self, text):
+        if not self._syncing_pages:
+            self.picker.set_from_text(text)
+
+    def refresh_picker(self):
+        if self.picker is None:
+            return
+        if not self.files:
+            self._picker_source = None
+            self.picker.clear()
+            return
+        path = self.files[0]
+        pdf = self.cache.pdf_for(path)
+        details = self.info.get(path, {})
+        if (path, pdf) == self._picker_source:
+            return
+        self._picker_source = (path, pdf)
+        if details.get('locked'):
+            self.picker.clear('PDF protegido por senha: use "Desbloquear PDF" antes.')
+        elif pdf is None or not details.get('pages'):
+            self.picker.clear('As miniaturas aparecem depois de processar (documento do Office).')
+        else:
+            self.picker.load(pdf, details['pages'])
+            self.picker.set_from_text(self.widgets[self.tool.page_picker[1]].text())
 
     # ---- arquivos ------------------------------------------------------------------------
     @property
@@ -442,10 +583,9 @@ class ToolPage(QWidget):
         else:
             pattern = 'Arquivos PDF (*.pdf);;Todos os arquivos (*.*)'
         title = 'Escolha os arquivos' if self.tool.multiple else 'Escolha o arquivo'
-        global _last_folder
-        chosen, _filter = QFileDialog.getOpenFileNames(self, title, _last_folder, pattern)
+        chosen, _filter = QFileDialog.getOpenFileNames(self, title, last_folder(), pattern)
         if chosen:
-            _last_folder = str(Path(chosen[0]).parent)
+            remember_folder(chosen[0])
             self.add_paths(chosen)
 
     def add_paths(self, paths):
@@ -548,6 +688,8 @@ class ToolPage(QWidget):
             columns += [details['detail'], ops.human_size(details['size'])]
             item = QTreeWidgetItem(columns)
             item.setData(0, Qt.UserRole, path)
+            if self.reorderable:  # arrasta, mas não solta "dentro" de outro arquivo
+                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsDragEnabled)
             pages_column = 2 if self.show_kind else 1
             item.setTextAlignment(pages_column, Qt.AlignCenter)
             item.setTextAlignment(pages_column + 1, Qt.AlignRight | Qt.AlignVCenter)
@@ -564,21 +706,27 @@ class ToolPage(QWidget):
         else:
             self.files_stack.setCurrentIndex(0)
             self.clear_preview()
+        self.refresh_picker()
 
     def selected_paths(self):
         return [item.data(0, Qt.UserRole) for item in self.tree.selectedItems()]
 
     def on_select(self):
         selected = self.selected_paths()
-        if selected and not self.running:  # com a tarefa rodando, só ela mexe no PyMuPDF (ele não é thread-safe)
+        if selected and self.picker is None:
             self.show_preview(selected[0])
 
     def clear_preview(self):
+        self.preview_loader.cancel()
+        self.preview_path = None
         self.preview.clear()
         self.preview_caption.setText('')
 
     def show_preview(self, path):
+        """A primeira página do arquivo, desenhada em segundo plano (a janela não espera o PDF abrir)."""
+        self.preview_loader.cancel()
         self.preview.clear()
+        self.preview_path = None
         details = self.info.get(path)
         if details is None:
             return
@@ -586,24 +734,26 @@ class ToolPage(QWidget):
         if details['locked']:
             self.preview.setText('PDF protegido\npor senha')
             return
-        if self.tool.inputs != 'image' and self.cache.pdf_for(path) is None:
+        if self.tool.inputs == 'image':
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                self.preview.setText('Sem prévia')
+            else:
+                self.preview.setPixmap(pixmap.scaled(*PREVIEW_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            return
+        pdf = self.cache.pdf_for(path)
+        if pdf is None:
             self.preview.setText('Prévia disponível\ndepois de processar')  # documento do Office
             return
-        try:
-            if self.tool.inputs == 'image':
-                pixmap = QPixmap(path)
-            else:
-                with fitz.open(self.cache.pdf_for(path)) as document:
-                    page = document[0]
-                    zoom = min(PREVIEW_SIZE[0] / page.rect.width, PREVIEW_SIZE[1] / page.rect.height) * 2
-                    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
-                    image = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888).copy()
-                    pixmap = QPixmap.fromImage(image)
-            if pixmap.isNull():
-                raise ValueError('sem imagem')
-            self.preview.setPixmap(pixmap.scaled(*PREVIEW_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        except Exception:
-            self.preview.setText('Sem prévia')
+        self.preview.setText('Carregando…')
+        self.preview_path = str(pdf)
+        self.preview_loader.request(pdf, [0], PREVIEW_SIZE[0] * 2, PREVIEW_SIZE[1] * 2)
+
+    def _on_preview_image(self, path, _index, image):
+        if path != self.preview_path:
+            return
+        pixmap = QPixmap.fromImage(image)
+        self.preview.setPixmap(pixmap.scaled(*PREVIEW_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def remove_selected(self):
         if self.running:
@@ -639,8 +789,32 @@ class ToolPage(QWidget):
             order[index], order[index + step] = order[index + step], order[index]
         self.files = order
         self.refresh_files()
+        self.reselect(selected)
+
+    def reselect(self, paths):
+        chosen = set(paths)
         for position, path in enumerate(self.files):
-            self.tree.topLevelItem(position).setSelected(path in selected)
+            self.tree.topLevelItem(position).setSelected(path in chosen)
+
+    def sort_by_name(self):
+        """Põe a lista em ordem de nome, do jeito que uma pessoa ordenaria (números pelo valor)."""
+        if self.running or len(self.files) < 2:
+            return
+        selected = self.selected_paths()
+        self.files = sorted(self.files, key=natural_key)
+        self.refresh_files()
+        self.reselect(selected)
+
+    def sync_order_from_tree(self):
+        """Depois de arrastar: a ordem da lista na tela passa a ser a ordem dos arquivos."""
+        order = [self.tree.topLevelItem(row).data(0, Qt.UserRole) for row in range(self.tree.topLevelItemCount())]
+        if sorted(order) != sorted(self.files) or self.running:
+            self.refresh_files()  # algo inesperado (item aninhado, tarefa rodando): volta ao estado conhecido
+            return
+        selected = self.selected_paths()
+        self.files = order
+        self.refresh_files()
+        self.reselect(selected)
 
     # ---- arrastar e soltar ---------------------------------------------------------------
     def dragEnterEvent(self, event):
@@ -736,7 +910,7 @@ class ToolPage(QWidget):
     def start_worker(self, job_list, values):
         self.running = True
         self.cancel_event.clear()
-        for button in (self.open_folder_button, self.open_file_button):
+        for button in (self.open_folder_button, self.open_file_button, self.again_button):
             button.hide()
         self.run_button.setText('Cancelar tarefa')
         self.progress.setValue(0)
@@ -774,9 +948,18 @@ class ToolPage(QWidget):
             return
         self.dirty = False
         self.output_file, self.output_folder = summary.output_file, summary.output_folder
-        self.set_message(summary.text, 'ok')
+        self.set_message('✓  ' + summary.text, 'ok')
         self.open_folder_button.show()
         self.open_file_button.setVisible(self.output_file is not None)
+        self.again_button.show()
+        if settings.current().get('open_folder_after'):
+            self.open_path(self.output_folder)
+
+    def start_over(self):
+        """Depois de terminar: limpa a lista para processar outros arquivos (as opções ficam como estão)."""
+        self.clear_files()
+        for button in (self.open_folder_button, self.open_file_button, self.again_button):
+            button.hide()
 
     def finish_cancelled(self, result):
         kept = len(result[0])
@@ -806,6 +989,9 @@ class ToolPage(QWidget):
 
     def discard_work(self):
         """Descarta a seleção em tela e as conversões temporárias; o que foi gerado já está onde o usuário pediu."""
+        self.preview_loader.cancel()
+        if self.picker is not None:
+            self.picker.loader.cancel()
         self.cache.clear()
 
     @staticmethod

@@ -79,6 +79,8 @@ class Tool:
     ordered: bool = False  # a ordem da lista importa (mostra as setas para subir e descer)
     any_format: bool = True  # aceita também imagens, texto, HTML e Office (convertidos para PDF); False: só PDF
     output_ext: str = 'pdf'  # extensão do que a ferramenta grava (pdf, ou txt em "PDF para texto")
+    # Escolha de páginas por miniaturas, ligada a uma opção de texto: ("select" ou "order", chave da opção)
+    page_picker: tuple = ()
 
     @property
     def icon(self):
@@ -248,6 +250,7 @@ TOOLS = (
         _run_remove,
         multiple=False,
         suffix='_sem_paginas',
+        page_picker=('select', 'pages'),
         action='Remover páginas',
         keywords='excluir apagar deletar remove',
         options=(Option('pages', 'Páginas a remover', 'text', '', help=PAGES_HELP),),
@@ -261,6 +264,7 @@ TOOLS = (
         _run_extract,
         multiple=False,
         suffix='_extraido',
+        page_picker=('select', 'pages'),
         action='Extrair páginas',
         keywords='extract selecionar',
         options=(Option('pages', 'Páginas a extrair', 'text', '', help=PAGES_HELP),),
@@ -274,6 +278,7 @@ TOOLS = (
         _run_organize,
         multiple=False,
         suffix='_organizado',
+        page_picker=('order', 'order'),
         action='Organizar PDF',
         keywords='reordenar ordem inverter organize',
         options=(
