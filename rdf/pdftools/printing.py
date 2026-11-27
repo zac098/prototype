@@ -80,9 +80,11 @@ def print_document(source, printer, progress=ops._noop):
                 zoom = min(factor, MAX_DPI / 72)  # o que passa disso é ampliação da imagem já desenhada
                 pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
                 image = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888)
+                # A origem do QPainter já é o canto da área de impressão (fullPage desligado): somar area.x() e
+                # area.y() contaria a margem duas vezes e cortaria a direita e o rodapé da página.
                 target = QRectF(
-                    area.x() + (area.width() - width_pt * factor) / 2,
-                    area.y() + (area.height() - height_pt * factor) / 2,
+                    (area.width() - width_pt * factor) / 2,
+                    (area.height() - height_pt * factor) / 2,
                     width_pt * factor,
                     height_pt * factor,
                 )

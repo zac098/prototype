@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
 from rdf.core import analysis_runner, exporter, inputs
 from rdf.core.batch import FILTERS, Batch, read_session_file, row_from_result, status_tone
 from rdf.core.config import OUTPUT_FORMATS
+from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.core.io_files import INPUT_EXTENSIONS
 from rdf.qt import dialogs, theme
 from rdf.qt.busy import Responsive
@@ -231,6 +232,7 @@ class RenamerPage(QWidget):
         self.preview_cache = OrderedDict()
         self.analysis_started = 0.0
         self.last_export_folder = None
+        self.discarded = False  # a tela saiu (Voltar): o que a análise ainda deixar de temporário é apagado ao fim
         self.setAcceptDrops(True)
 
         self.save_timer = QTimer(self)
@@ -973,6 +975,9 @@ class RenamerPage(QWidget):
     def finish_analysis(self):
         cancelled, discard = self.analysis_cancelled, self.analysis_discard
         self.set_busy(False)
+        if self.discarded:  # a tela já tinha saído: só falta apagar as cópias temporárias
+            inputs.cleanup_generated_files(self.batch.generated_files)
+            return
         self.format_combo.setCurrentText(self.batch.set_output_format(self.format_combo.currentText()))
         if discard:
             self.batch.restore_snapshot(self.analysis_snapshot or {})
@@ -1145,7 +1150,7 @@ class RenamerPage(QWidget):
                 f'Modificado: {datetime.fromtimestamp(stat.st_mtime).astimezone().strftime("%d/%m/%Y %H:%M:%S")}',
             ]
             if original.suffix.lower() == '.pdf':
-                with fitz.open(original) as document:
+                with FITZ_LOCK, fitz.open(original) as document:
                     details.append(f'Páginas: {len(document)}')
             self.info('Propriedades do arquivo', '\n'.join(details))
         except (OSError, RuntimeError) as exc:
@@ -1383,10 +1388,16 @@ class RenamerPage(QWidget):
             return True
 
     def discard_work(self):
-        """Zera a tela: apaga a sessão salva e os arquivos temporários (separados/convertidos)."""
+        """Zera a tela: apaga a sessão salva e os arquivos temporários (separados/convertidos).
+
+        Se uma análise cancelada ainda está terminando os arquivos em leitura, os temporários são apagados quando ela
+        acabar (finish_analysis): são cópias de documentos com dados pessoais."""
+        self.discarded = True
         self.save_timer.stop()
         self.batch.persistence_disabled = True
         Batch.discard_session_file()
+        if self.analysis_running:
+            return  # sem o aviso de prepare_close: o usuário já escolheu sair; finish_analysis apaga os temporários
         self.prepare_close()
 
     # ---- prévia --------------------------------------------------------------------------

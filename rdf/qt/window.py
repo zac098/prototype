@@ -288,6 +288,25 @@ class MainWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
 
+    def finish_retired(self):
+        """Ao fechar: as telas que já saíram, mas ainda terminam uma tarefa cancelada, têm um tempo para parar.
+
+        Elas não podem impedir o fechamento (o usuário nem as vê mais); o que deixarem de temporário é apagado quando
+        terminarem, ou pela limpeza da próxima abertura."""
+        waiting = [page for page in self._retired if page.running or not page.is_finished()]
+        if not waiting:
+            return
+        for page in waiting:
+            page.cancel_for_exit()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            deadline = time.monotonic() + (2 if self.is_ending_session() else CANCEL_WAIT_SECONDS)
+            while any(p.running or not p.is_finished() for p in waiting) and time.monotonic() < deadline:
+                QApplication.processEvents()
+                time.sleep(0.01)
+        finally:
+            QApplication.restoreOverrideCursor()
+
     def reset_tool(self, tool_id):
         """Vai para o início e apaga a tela da ferramenta: ao abrir de novo, ela vem zerada."""
         page = self.pages.pop(tool_id, None)
@@ -351,11 +370,12 @@ class MainWindow(QMainWindow):
             event.ignore()
             self.hide_to_tray()
             return
-        for page in [*self.pages.values(), *self._retired]:
+        for page in self.pages.values():
             # O renomeador tem fechamento próprio: não fecha no meio da análise e salva a sessão.
             if hasattr(page, 'prepare_close') and not page.prepare_close():
                 event.ignore()
                 return
+        self.finish_retired()
         busy = [
             page
             for page in self.pages.values()

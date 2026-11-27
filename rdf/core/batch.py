@@ -350,15 +350,18 @@ class Batch:
         aprovado ou corrigido à mão."""
         options = self.options
         for row in self.rows.values():
+            status = normalize_status(row.get('status'))
             failed = row.get('method') in ('Erro', 'Falhou')
-            settled = row.get('status') in ('APROVADO', 'CORRIGIDO')
+            settled = status in ('APROVADO', 'CORRIGIDO')
+            read = status in ('OK', 'REVISAR')  # lido como folha ou documento: o nome e o status acompanham as opções
             if row.get('category'):
                 row['new'] = with_output_extension(row.get('new', ''), self.output_format)
-                if not settled and not failed:
+                if read and not failed:
                     row['status'] = 'OK'
-            elif not row.get('manual_name'):
+            elif not row.get('manual_name') and (read or settled):
+                # Não reconhecido, com erro ou ainda pendente fica como está: trocar as opções não o torna exportável.
                 row['new'] = self.compose(row)
-                if not failed and not settled:
+                if read and not failed:
                     row['status'] = timesheet_status(row, options)
 
     # -- análise --
@@ -443,7 +446,16 @@ class Batch:
             self.rows[path] = row
         row.update({key: safe_filename(value or '') for key, value in data.items()})
         row.update(
-            {'chapa_source': 'manual', 'method': 'Manual', 'conf': 1.0, 'status': 'CORRIGIDO', 'manual_name': False}
+            {
+                'chapa_source': 'manual',
+                'method': 'Manual',
+                'conf': 1.0,
+                'status': 'CORRIGIDO',
+                'manual_name': False,
+                # matrícula, nome e mês são dados de folha: um "atestado" corrigido assim vira folha de ponto
+                'category': None,
+                'document_type': 'Folha de ponto',
+            }
         )
         row['new'] = self.compose(row)
         return row

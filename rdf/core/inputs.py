@@ -13,6 +13,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from rdf.core import config
+from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.core.imaging import rectify_document_photo
 from rdf.core.io_files import INPUT_EXTENSIONS, validate_input_content
 from rdf.core.naming import safe_filename
@@ -36,17 +37,22 @@ _PAGE_COUNTS = {}
 
 
 def input_page_count(path):
-    """Páginas do arquivo. Guardado por (caminho, data, tamanho): cada adição ao lote recontava todos os arquivos."""
+    """Páginas do arquivo. Guardado por (caminho, data, tamanho): cada adição ao lote recontava todos os arquivos.
+
+    Uma imagem com vários quadros (TIFF de scanner) vira uma página por quadro, então conta como tal no limite."""
     path = Path(path)
-    if path.suffix.lower() != '.pdf':
-        return 1
     stat = path.stat()
     key = (str(path), stat.st_mtime_ns, stat.st_size)
     if key not in _PAGE_COUNTS:
-        with fitz.open(path) as document:
-            if len(_PAGE_COUNTS) >= 2048:
-                _PAGE_COUNTS.clear()
-            _PAGE_COUNTS[key] = max(1, len(document))
+        if path.suffix.lower() == '.pdf':
+            with FITZ_LOCK, fitz.open(path) as document:
+                count = len(document)
+        else:
+            with Image.open(path) as image:
+                count = getattr(image, 'n_frames', 1)
+        if len(_PAGE_COUNTS) >= 2048:
+            _PAGE_COUNTS.clear()
+        _PAGE_COUNTS[key] = max(1, int(count))
     return _PAGE_COUNTS[key]
 
 
@@ -134,7 +140,7 @@ def split_pdf_pages(path):
     source = Path(path)
     token = f'{safe_filename(source.stem)[:40]}_{hashlib.sha1(str(source.resolve()).encode("utf-8")).hexdigest()[:10]}'
     created = []
-    with fitz.open(path) as doc:
+    with FITZ_LOCK, fitz.open(path) as doc:
         for index in range(len(doc)):
             target = config.SPLIT_DIR / f'{token}_pagina_{index + 1:03d}.pdf'
             target.unlink(missing_ok=True)
@@ -199,7 +205,7 @@ def normalize_input_file(path):
 
 
 def pdf_page_total(path):
-    with fitz.open(path) as doc:
+    with FITZ_LOCK, fitz.open(path) as doc:
         return len(doc)
 
 

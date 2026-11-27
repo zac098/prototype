@@ -530,7 +530,13 @@ def crop_pdf(source, dest, top=0.0, bottom=0.0, left=0.0, right=0.0, progress=_n
             if left + right >= visible.width - 10 or top + bottom >= visible.height - 10:
                 raise PdfToolError('As margens são maiores do que a página; reduza os valores.')
             box = fitz.Rect(visible.x0 + left, visible.y0 + top, visible.x1 - right, visible.y1 - bottom)
-            page.set_cropbox(box * page.derotation_matrix)
+            box = box * page.derotation_matrix
+            # page.rect começa no canto da área já cortada; set_cropbox mede a partir da página inteira (mediabox).
+            # Sem somar o corte atual, cortar de novo um PDF já cortado traria de volta as margens tiradas antes.
+            current = page.cropbox
+            page.set_cropbox(
+                fitz.Rect(box.x0 + current.x0, box.y0 + current.y0, box.x1 + current.x0, box.y1 + current.y0)
+            )
         _save(document, temp)
     return Result([Path(dest)], 'Margens cortadas em todas as páginas.')
 
