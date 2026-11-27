@@ -151,10 +151,19 @@ class MergePrintTests(unittest.TestCase):
 
         return mock.patch.object(self.page, 'make_print_dialog', side_effect=make)
 
+    def windows_path(self):
+        """Na tela de impressão do RDF, escolhe "Janela do Windows": estes testes cobrem esse caminho."""
+        from rdf.qt.print_dialog import PrintDialog
+
+        preview = mock.Mock()
+        preview.exec.return_value = PrintDialog.WINDOWS
+        return mock.patch.object(self.page, 'make_preview_dialog', return_value=preview)
+
     def print_it(self, accept=True):
         with (
             mock.patch.object(self.page, 'make_printer', side_effect=self.printer_to_file),
             self.fake_dialog(accept),
+            self.windows_path(),
         ):
             self.page.print_files()
 
@@ -215,6 +224,7 @@ class MergePrintTests(unittest.TestCase):
         with (
             mock.patch.object(self.page, 'make_printer', side_effect=self.printer_to_file),
             mock.patch.object(self.page, 'make_print_dialog', side_effect=dialog),
+            self.windows_path(),
         ):
             self.page.print_files()
         self.assertEqual(seen['during'], ['juntados.pdf'])

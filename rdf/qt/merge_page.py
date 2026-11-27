@@ -1,8 +1,9 @@
 """Tela "Unir PDF": a tela padrão das ferramentas, com o botão Imprimir ao lado do Unir.
 
-"Imprimir..." junta a lista (na ordem) em um documento só e abre a janela de impressão do Windows: lá se escolhe a
-impressora, o papel, as cópias, as páginas, a cor e a frente e verso. Com um único arquivo na lista, ele é impresso
-sozinho. Nada é salvo: o PDF juntado fica numa pasta temporária só enquanto a impressão é preparada e é apagado logo
+"Imprimir..." junta a lista (na ordem) em um documento só e abre a tela de impressão do RDF (rdf.qt.print_dialog):
+prévia de cada folha, impressora, cópias, páginas, orientação, papel, páginas por folha, escala, margens, cor e frente e
+verso. A janela do Windows continua a um botão de distância, para os ajustes do driver. Com um único arquivo na lista,
+ele é impresso sozinho. Nada é salvo: o PDF juntado fica numa pasta temporária só enquanto a impressão é preparada e é apagado logo
 depois (impresso, cancelado ou com erro). Para guardar o PDF, o botão é o "Unir PDF".
 """
 
@@ -103,6 +104,11 @@ class MergePage(ToolPage):
             ops.merge_pdfs(pdfs, joined)
         return str(joined)
 
+    def make_preview_dialog(self, pdf, title):
+        from rdf.qt.print_dialog import PrintDialog
+
+        return PrintDialog(pdf, title, self)
+
     def make_printer(self):
         from PySide6.QtPrintSupport import QPrinter
 
@@ -139,13 +145,45 @@ class MergePage(ToolPage):
         shutil.rmtree(self.print_folder, ignore_errors=True)
 
     def _print(self, files):
+        from rdf.qt.print_dialog import PrintDialog
+
         try:
             pdf = self.printable_pdf(files)
             with FITZ_LOCK, ops.open_pdf(pdf) as document:
                 total = document.page_count
-            printer = self.make_printer()
             names = [Path(path).name for path in files]
-            printer.setDocName(names[0] if len(names) == 1 else f'RDF - {len(names)} arquivos')
+            title = names[0] if len(names) == 1 else f'RDF - {len(names)} arquivos'
+            preview = self.make_preview_dialog(pdf, title)
+            choice = preview.exec()
+            if choice == PrintDialog.WINDOWS:
+                return self._print_with_windows(pdf, total, title)
+            if not choice:
+                self.set_message('Impressão cancelada.', 'info')
+                return
+            printer = preview.make_printer()
+            responsive = Responsive()
+
+            def progress(fraction, text=''):
+                if text:
+                    self.set_message(text, 'info')
+                responsive.pulse()
+
+            pages, sheets = printing.print_with_settings(pdf, printer, preview.settings(), progress)
+        except ops.PdfToolError as exc:
+            self.set_message(str(exc), 'error')
+            return
+        except Exception as exc:
+            self.set_message(f'Não foi possível imprimir: {exc}', 'error')
+            return
+        where = printer.printerName() or 'a impressora'
+        detail = f'{pages} página(s)' if pages == sheets else f'{pages} página(s) em {sheets} folha(s)'
+        self.set_message(f'{detail} enviada(s) para "{where}". Acompanhe na fila da impressora.', 'ok')
+
+    def _print_with_windows(self, pdf, total, title):
+        """A janela de impressão do Windows (sem prévia), para quem precisa dos ajustes do driver."""
+        try:
+            printer = self.make_printer()
+            printer.setDocName(title)
             printer.setFromTo(1, total)
             dialog = self.make_print_dialog(printer)
             dialog.setMinMax(1, total)
