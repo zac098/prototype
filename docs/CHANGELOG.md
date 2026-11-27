@@ -1,7 +1,34 @@
 # Histórico de alterações
 
-## 4.0.0
-- (em preparação)
+## 4.0.0 - Visual novo, tema escuro e seis ferramentas novas
+
+### Visual e uso
+- **Tema claro, escuro ou igual ao Windows**, trocando na hora (botão na tela inicial, Configurações ou Ctrl+Shift+T). No modo "igual ao Windows" o app acompanha a troca do sistema, e a barra de título também escurece. Todas as cores passam pelo tema, com contraste conferido nos dois.
+- **Tela inicial nova**: barra com a marca, a versão, a busca e os botões de tema, configurações e ajuda; **favoritas** (estrela em cada ferramenta ou Ctrl+D) e **usadas recentemente** no topo; filtros por categoria; selo "Novo" nas ferramentas desta versão.
+- **Busca melhor**: não diferencia acentos nem maiúsculas ("numeros" acha "Números"), acha por começo de palavra e mostra primeiro o mais relevante. Enter abre o primeiro resultado; as setas andam entre as ferramentas.
+- **Configurações** (Ctrl+,): tema, abrir a pasta do resultado ao terminar, iniciar com o Windows, situação do Tesseract e pasta de dados. **Sobre** com as versões dos componentes e **lista de atalhos** (F1).
+- A janela volta com o **tamanho e a posição** da última vez, e as janelas de escolher arquivos lembram a última pasta mesmo depois de fechar o app.
+
+### Ferramentas de PDF
+- Novas: **Tarjar dados (LGPD)** (apaga de verdade CPF, CNPJ, e-mail, telefone e textos digitados; o texto sai do arquivo e a imagem embaixo fica preta), **Metadados do PDF** (mostra autor, programa e datas, edita ou remove tudo), **PDF para texto** (.txt), **Escala de cinza**, **Várias páginas por folha** (2, 4, 6 ou 9) e **Ajustar tamanho do papel** (A4, Carta, Ofício, A3).
+- **Miniaturas das páginas** em Remover, Extrair e Organizar páginas: clicar nas miniaturas preenche o campo de páginas (e vice-versa), com atalhos para todas, nenhuma, ímpares e pares; em Organizar, arrastar muda a ordem. Em Remover, as páginas marcadas ficam com o número em vermelho.
+- Em Unir e Imagem para PDF, **arrastar os arquivos na lista** muda a ordem, e "A→Z" ordena por nome do jeito humano ("folha 2" antes de "folha 10").
+- A prévia e as miniaturas são desenhadas em segundo plano: a janela não trava abrindo um PDF grande.
+- Ao terminar: "Abrir arquivo", "Abrir pasta" e "Começar de novo".
+
+### Renomear folhas de ponto
+- **OCR até 4x mais rápido** com os mesmos resultados: cada Tesseract usa uma thread (com as quatro leituras em paralelo, as threads disputavam a CPU), a leitura do cabeçalho para assim que tem matrícula, nome e mês com boa confiança, e uma folha já reconhecida não tem a página inteira lida à procura de atestado. Nas 20 folhas de teste: 20 de 20 prontas, de 63 s para 16 s, com matrícula, nome e mês idênticos aos da versão anterior.
+- Status em **pílulas coloridas**, **busca no lote** (Ctrl+L) por nome, novo nome ou matrícula, e **"Próximo a revisar" (F3)**, que leva direto ao próximo arquivo que precisa de conferência.
+- Tempo restante estimado durante a análise, lote vazio com um convite para arrastar os documentos e botão "Abrir pasta exportada" depois de exportar.
+
+### Correções e código
+- O PyMuPDF não aceita duas threads ao mesmo tempo: as ferramentas, a prévia, as miniaturas e a impressão passam a usar a mesma trava que o renomeador já usava.
+- Exportação do renomeador: cada destino planejado é conferido (a checagem anterior podia pular caminhos).
+- Erros inesperados não somem mais calados: vão para o log e aparecem num aviso com o caminho dele.
+- O mínimo passa a ser o **Python 3.11** (o Pillow fixado não instala no 3.10, que o projeto dizia aceitar); `Iniciar RDF.bat` e o build deixam de procurar o 3.10.
+- Preferências do usuário em `preferencias.json` (só escolhas de uso, nada dos documentos), gravadas sem nunca ficar pela metade.
+- CI também no Linux com o Python mínimo; regras extras do ruff (bugbear, pyupgrade); a suíte de testes caiu de 145 s para cerca de 80 s mesmo com mais de 100 testes novos.
+
 
 ## Imprimir passou para "Unir PDF"
 - A ferramenta "Imprimir arquivos" foi removida. No lugar, "Unir PDF" ganhou o botão **Imprimir…** (atalho Ctrl+P): ele junta a lista, na ordem, e abre a janela de impressão do Windows, onde se escolhe impressora, papel, cópias, páginas, cor e frente e verso. Não precisa unir antes, e com um arquivo só ele é impresso sozinho. Aceita os mesmos tipos de arquivo das outras ferramentas (imagens, textos, Office).
