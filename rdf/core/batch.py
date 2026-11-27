@@ -284,7 +284,8 @@ class Batch:
 
     def remove(self, paths):
         """Tira arquivos do lote (os originais nunca são apagados). Devolve os caminhos removidos."""
-        removed = [path for path in paths if path in set(self.files)]
+        current = set(self.files)
+        removed = list(dict.fromkeys(path for path in paths if path in current))
         gone = set(removed)
         self.files = [path for path in self.files if path not in gone]
         for path in removed:
@@ -344,7 +345,8 @@ class Batch:
         self.rows = {path: dict(snapshot[path]) for path in self.files if path in snapshot}
 
     def pending(self, paths):
-        return [path for path in paths if path in set(self.files) and self.status(path) == 'Pendente']
+        current = set(self.files)
+        return [path for path in paths if path in current and self.status(path) == 'Pendente']
 
     # -- ações sobre os selecionados --
     def approve(self, paths):

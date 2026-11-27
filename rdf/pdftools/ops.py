@@ -15,6 +15,7 @@ from pathlib import Path
 import fitz
 from PIL import Image, ImageOps, ImageSequence
 
+from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools.pages import PageRangeError, parse_page_groups, parse_page_ranges
 
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp', '.gif'}
@@ -119,7 +120,7 @@ def pdf_info(path):
     if key is not None and key in _INFO_CACHE:
         return _INFO_CACHE[key]
     try:
-        with fitz.open(path) as document:
+        with FITZ_LOCK, fitz.open(path) as document:
             info = (document.page_count, bool(document.needs_pass))
     except Exception:
         return 0, False

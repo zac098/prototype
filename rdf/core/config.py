@@ -21,6 +21,7 @@ LOG_DIR = APP_DATA_DIR / "logs"
 LOG_FILE_NAME = "renomeador.log"
 SESSION_DIR = APP_DATA_DIR
 SESSION_FILE = SESSION_DIR / "sessao_atual.json"
+SETTINGS_FILE = APP_DATA_DIR / "preferencias.json"  # tema, favoritas, janela: nada dos documentos
 SPLIT_DIR = SESSION_DIR / "páginas_separadas"
 CONVERT_DIR = SESSION_DIR / "arquivos_convertidos"
 

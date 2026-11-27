@@ -24,6 +24,7 @@ from pathlib import Path
 import fitz
 from PIL import Image, ImageOps
 
+from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import ops
 
 IMAGE_EXTENSIONS = ops.IMAGE_EXTENSIONS
@@ -212,7 +213,7 @@ def convert_to_pdf(source, dest, progress=ops._noop):
     if ext in OFFICE_EXTENSIONS:
         _office_to_pdf(source, dest)
     else:
-        with ops.atomic_output(dest) as temp:
+        with FITZ_LOCK, ops.atomic_output(dest) as temp:
             if ext in IMAGE_EXTENSIONS:
                 document = _image_document(source)
             elif ext in TEXT_EXTENSIONS:

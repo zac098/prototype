@@ -9,6 +9,7 @@ Modos de saída (Tool.mode):
 - "multi":   cada arquivo gera vários (os arquivos vão para uma subpasta nova, escolhida a pasta pai)
 """
 
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -479,12 +480,41 @@ TOOLS = (
 TOOLS_BY_ID = {tool.id: tool for tool in TOOLS}
 
 
+def fold(text):
+    """Texto sem acentos e em minúsculas: "Números" e "numeros" são a mesma busca."""
+    decomposed = unicodedata.normalize('NFKD', text or '')
+    return ''.join(char for char in decomposed if not unicodedata.combining(char)).casefold()
+
+
+def _relevance(tool, words):
+    """Quanto a ferramenta combina com as palavras (0 = não combina). Título vale mais que descrição."""
+    title = fold(tool.title)
+    title_words = title.split()
+    keywords = fold(f'{tool.keywords} {tool.category}')
+    description = fold(tool.description)
+    score = 0
+    for word in words:
+        if any(item.startswith(word) for item in title_words):
+            score += 6
+        elif word in title:
+            score += 4
+        elif any(item.startswith(word) for item in keywords.split()):
+            score += 3
+        elif word in keywords:
+            score += 2
+        elif word in description:
+            score += 1
+        else:
+            return 0  # todas as palavras precisam aparecer em algum lugar
+    return score
+
+
 def search_tools(query=''):
-    """Ferramentas que combinam com o texto digitado."""
-    words = (query or '').lower().split()
-    found = []
-    for tool in TOOLS:
-        haystack = f'{tool.title} {tool.description} {tool.category} {tool.keywords}'.lower()
-        if all(word in haystack for word in words):
-            found.append(tool)
-    return found
+    """Ferramentas que combinam com o texto digitado, da mais para a menos relevante.
+
+    Sem acentos e sem diferença de maiúsculas; sem texto, todas na ordem do catálogo."""
+    words = fold(query).split()
+    if not words:
+        return list(TOOLS)
+    scored = [(_relevance(tool, words), index, tool) for index, tool in enumerate(TOOLS)]
+    return [tool for score, _index, tool in sorted(scored, key=lambda item: (-item[0], item[1])) if score]

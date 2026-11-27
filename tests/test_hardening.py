@@ -98,8 +98,14 @@ class TesseractSearchTests(unittest.TestCase):
                 self.assertIsNone(config._which_outside_cwd('tesseract'))
 
     def test_a_program_elsewhere_is_found(self):
-        with mock.patch.object(config.shutil, 'which', return_value=r'C:\Programas\tesseract.exe'):
-            self.assertEqual(config._which_outside_cwd('tesseract'), r'C:\Programas\tesseract.exe')
+        with tempfile.TemporaryDirectory() as tmp:
+            program = Path(tmp) / 'Programas' / 'tesseract.exe'  # caminho absoluto em qualquer sistema
+            documents = Path(tmp) / 'documentos'
+            with (
+                mock.patch.object(config.shutil, 'which', return_value=str(program)),
+                mock.patch.object(config.Path, 'cwd', return_value=documents),
+            ):
+                self.assertEqual(config._which_outside_cwd('tesseract'), str(program))
 
 
 class InstanceChannelTests(unittest.TestCase):

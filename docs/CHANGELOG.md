@@ -1,5 +1,8 @@
 # Histórico de alterações
 
+## 4.0.0
+- (em preparação)
+
 ## Imprimir passou para "Unir PDF"
 - A ferramenta "Imprimir arquivos" foi removida. No lugar, "Unir PDF" ganhou o botão **Imprimir…** (atalho Ctrl+P): ele junta a lista, na ordem, e abre a janela de impressão do Windows, onde se escolhe impressora, papel, cópias, páginas, cor e frente e verso. Não precisa unir antes, e com um arquivo só ele é impresso sozinho. Aceita os mesmos tipos de arquivo das outras ferramentas (imagens, textos, Office).
 - "Imprimir com o RDF" (botão direito) e "RDF - Imprimir arquivos" (Enviar para) agora abrem "Unir PDF" com os arquivos já na lista, prontos para o botão Imprimir. O ícone da bandeja tem "Imprimir ou unir PDFs".

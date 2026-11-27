@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from rdf.core import config
+from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import jobs, ops, sources
 from rdf.qt.busy import Responsive
 from rdf.qt.widgets import BackButton, SmoothScrollArea, ToolTile
@@ -71,14 +72,17 @@ class _Worker(QObject):
         self.cache = cache
 
     def _tool_with_conversion(self):
-        """A ferramenta, mas abrindo o PDF convertido de cada arquivo (convertendo agora o que ficou para depois)."""
-        if self.cache is None:
-            return self.tool
+        """A ferramenta, mas abrindo o PDF convertido de cada arquivo (convertendo agora o que ficou para depois).
+
+        A operação roda sob a trava do PyMuPDF: ele não aceita duas threads ao mesmo tempo, e a prévia, as miniaturas
+        e o renomeador também o usam em segundo plano."""
 
         def run(source, dest, values, progress):
             if self.cancel_event.is_set():
                 raise jobs.Cancelled
-            return self.tool.run(self.cache.resolve(source, progress), dest, values, progress)
+            resolved = source if self.cache is None else self.cache.resolve(source, progress)
+            with FITZ_LOCK:
+                return self.tool.run(resolved, dest, values, progress)
 
         return SimpleNamespace(id=self.tool.id, run=run)
 

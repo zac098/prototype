@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QPushButton
 
+from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import ops, printing
 from rdf.qt.busy import Responsive
 from rdf.qt.tool_page import ToolPage
@@ -55,13 +56,14 @@ class MergePage(ToolPage):
             self.set_message(f'Preparando {position} de {len(self.files)}: {Path(path).name}', 'info')
             responsive.pulse()
             pdfs.append(self.cache.resolve(path))
-        if len(pdfs) == 1:
-            ops.open_pdf(pdfs[0]).close()  # protegido por senha ou vazio: erro com mensagem pronta
-            return pdfs[0]
-        folder = self.cache.folder / 'impressao'
-        shutil.rmtree(folder, ignore_errors=True)
-        joined = folder / 'juntados.pdf'
-        ops.merge_pdfs(pdfs, joined)
+        with FITZ_LOCK:
+            if len(pdfs) == 1:
+                ops.open_pdf(pdfs[0]).close()  # protegido por senha ou vazio: erro com mensagem pronta
+                return pdfs[0]
+            folder = self.cache.folder / 'impressao'
+            shutil.rmtree(folder, ignore_errors=True)
+            joined = folder / 'juntados.pdf'
+            ops.merge_pdfs(pdfs, joined)
         return str(joined)
 
     def make_printer(self):
@@ -82,7 +84,7 @@ class MergePage(ToolPage):
             return
         try:
             pdf = self.printable_pdf()
-            with ops.open_pdf(pdf) as document:
+            with FITZ_LOCK, ops.open_pdf(pdf) as document:
                 total = document.page_count
             printer = self.make_printer()
             names = [Path(path).name for path in self.files]

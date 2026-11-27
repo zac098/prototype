@@ -130,7 +130,8 @@ def export_batch(batch, out_dir, output_format=None, progress=None):
         while True:
             target = destination / f'{candidate}.{extension}'
             planned = planned_export_paths(path, target, fmt)
-            keys = {str(p.relative_to(out)).lower() for p in planned}
+            # Uma chave por arquivo planejado, na mesma ordem: cada destino é conferido no lote e no disco.
+            keys = [str(p.relative_to(out)).lower() for p in planned]
             if all(key not in used and not p.exists() for key, p in zip(keys, planned)):
                 break
             candidate = f'{base} ({number})'

@@ -5,8 +5,10 @@ import sys
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
+from rdf.core import settings
 from rdf.core.autostart import BACKGROUND_FLAG
-from rdf.core.config import app_base_dir, init, sweep_stale_data
+from rdf.core.config import SETTINGS_FILE, app_base_dir, init, sweep_stale_data
+from rdf.qt import errors
 from rdf.qt.single_instance import InstanceServer, files_from_args, send_to_running
 from rdf.qt.theme import FONT_FAMILY, build_stylesheet
 from rdf.qt.tray import TrayController
@@ -36,6 +38,8 @@ def main(argv=None):
         if send_to_running(files):
             return 0
     init(app_base_dir())  # pastas de dados, log e Tesseract: igual ao app atual
+    errors.install()  # daqui em diante, nenhum erro some calado
+    settings.load(SETTINGS_FILE)
     if first:  # só o primeiro processo é dono das pastas temporárias
         sweep_stale_data()
     app.setQuitOnLastWindowClosed(False)  # quem encerra é a janela ao fechar de verdade (ou o "Sair" da bandeja)
