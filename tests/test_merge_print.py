@@ -278,7 +278,7 @@ class RegistryTests(unittest.TestCase):
         from rdf.pdftools.registry import TOOLS_BY_ID, search_tools
 
         self.assertNotIn('print', TOOLS_BY_ID)
-        self.assertEqual([t.id for t in search_tools('imprimir')], ['merge'])
+        self.assertEqual(search_tools('imprimir')[0].id, 'merge')
         self.assertFalse((_source.ROOT / 'rdf' / 'qt' / 'print_page.py').exists())
 
 

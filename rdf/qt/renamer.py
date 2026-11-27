@@ -6,13 +6,14 @@ arquivos, análise em paralelo e exportação), que não dependem de nenhuma int
 
 import logging
 import threading
+import time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
 import fitz
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtCore import QObject, QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QFontMetrics, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -24,12 +25,17 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLayout,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
     QSizePolicy,
     QSplitter,
+    QStackedWidget,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -39,21 +45,101 @@ from PySide6.QtWidgets import (
 from rdf.core import analysis_runner, exporter, inputs
 from rdf.core.batch import FILTERS, Batch, read_session_file, row_from_result, status_tone
 from rdf.core.config import OUTPUT_FORMATS
+from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.core.io_files import INPUT_EXTENSIONS
-from rdf.qt import dialogs
+from rdf.qt import dialogs, theme
 from rdf.qt.busy import Responsive
 from rdf.qt.preview import PageLoader, PreviewView
-from rdf.qt.widgets import BackButton
+from rdf.qt.theme import COLORS
+from rdf.qt.widgets import BackButton, BrandMark
 
 LOGGER = logging.getLogger('rdf')
 
 COLUMNS = ('Arquivo original', 'Novo nome', 'Leitura', 'Confiança', 'Status')
-TONES = {  # (cor do texto, fundo) de cada status na tabela
-    'ok': ('#176b3a', None),
-    'approved': ('#075985', None),
-    'review': ('#7a4300', '#fff1cc'),
-    'error': ('#8f1713', '#ffd9d6'),
+TONES = {  # (cor do texto, fundo) de cada status na tabela, como chaves do tema (claro ou escuro)
+    'ok': ('tone_ok', None),
+    'approved': ('tone_approved', None),
+    'review': ('tone_review', 'tone_review_bg'),
+    'error': ('tone_error', 'tone_error_bg'),
 }
+
+
+PILL_TONES = {  # (texto, fundo) da pílula de status
+    'ok': ('tone_ok', 'tone_ok_bg'),
+    'approved': ('tone_approved', 'tone_approved_bg'),
+    'review': ('tone_review', 'tone_review_bg'),
+    'error': ('tone_error', 'tone_error_bg'),
+    'pending': ('tone_pending', 'tone_pending_bg'),
+}
+STATUS_LABELS = {'NAO RECONHECIDO': 'NÃO RECONHECIDO', 'PENDENTE': 'PENDENTE'}
+
+
+def tone_colors(tone):
+    """(texto, fundo ou None) do tom no tema em uso."""
+    foreground, background = TONES[tone]
+    return COLORS[foreground], (COLORS[background] if background else None)
+
+
+def pill_tone(status):
+    return 'pending' if (status or '').strip().upper() == 'PENDENTE' else status_tone(status)
+
+
+def format_remaining(seconds):
+    """Tempo restante aproximado, em palavras curtas."""
+    seconds = max(0, int(seconds))
+    if seconds < 45:
+        return 'menos de 1 minuto'
+    minutes = round(seconds / 60)
+    if minutes < 60:
+        return f'cerca de {minutes} min'
+    hours, minutes = divmod(minutes, 60)
+    return f'cerca de {hours} h {minutes:02d} min'
+
+
+class StatusDelegate(QStyledItemDelegate):
+    """O status como uma pílula colorida: OK verde, aprovado azul, revisar amarelo, erro vermelho, pendente cinza."""
+
+    @staticmethod
+    def _font(option):
+        font = QFont(option.font)  # cópia: a fonte da opção é temporária
+        font.setBold(True)
+        font.setPointSizeF(max(7.0, font.pointSizeF() * 0.82))
+        return font
+
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        status = opt.text
+        opt.text = ''
+        opt.backgroundBrush = QBrush()  # o fundo colorido da linha fica atrás da pílula, não dentro dela
+        style = opt.widget.style() if opt.widget else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)
+        if not status:
+            return
+        label = STATUS_LABELS.get(status.upper(), status.upper())
+        foreground, background = PILL_TONES[pill_tone(status)]
+        font = self._font(option)
+        metrics = QFontMetrics(font)
+        height = metrics.height() + 6
+        width = min(opt.rect.width() - 8, metrics.horizontalAdvance(label) + 18)
+        rect = QRectF(opt.rect.x() + 4, opt.rect.center().y() - height / 2 + 1, width, height)
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(COLORS[background]))
+        painter.drawRoundedRect(rect, height / 2, height / 2)
+        painter.setFont(font)
+        painter.setPen(QColor(COLORS[foreground]))
+        painter.drawText(rect, Qt.AlignCenter, metrics.elidedText(label, Qt.ElideRight, int(width) - 10))
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        status = str(index.data() or '')
+        label = STATUS_LABELS.get(status.upper(), status.upper())
+        metrics = QFontMetrics(self._font(option))
+        return QSize(metrics.horizontalAdvance(label) + 30, metrics.height() + 16)
+
+
 NARROW_BELOW = 1100  # abaixo desta largura: sem as colunas Leitura/Confiança, botões e prévia mais enxutos
 SHORT_BELOW = 580
 SAVE_DELAY_MS = 400
@@ -113,7 +199,7 @@ def small_button(text, tooltip=None):
 def vertical_line():
     line = QFrame()
     line.setFixedWidth(1)
-    line.setStyleSheet('QFrame { background: #e0e6eb; border: none; }')
+    line.setObjectName('vline')
     return line
 
 
@@ -144,6 +230,9 @@ class RenamerPage(QWidget):
         self.preview_total = 0
         self.preview_request = 0
         self.preview_cache = OrderedDict()
+        self.analysis_started = 0.0
+        self.last_export_folder = None
+        self.discarded = False  # a tela saiu (Voltar): o que a análise ainda deixar de temporário é apagado ao fim
         self.setAcceptDrops(True)
 
         self.save_timer = QTimer(self)
@@ -157,6 +246,7 @@ class RenamerPage(QWidget):
         self.loader = PageLoader(self)
         self.loader.loaded.connect(self.on_preview_loaded)
         self.loader.failed.connect(self.on_preview_failed)
+        theme.manager().changed.connect(self.on_theme_changed)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(36, 22, 36, 16)
@@ -295,11 +385,28 @@ class RenamerPage(QWidget):
         self.filter_combo.textActivated.connect(self.on_filter_changed)
         self.edit_btn = small_button('Editar dados', 'Corrigir matrícula, nome e mês do arquivo selecionado')
         self.edit_btn.clicked.connect(self.edit_selected)
+        self.search_edit = QLineEdit()
+        self.search_edit.setObjectName('filterEdit')
+        self.search_edit.setPlaceholderText('Buscar no lote…')
+        self.search_edit.setToolTip('Filtra por nome do arquivo, novo nome, matrícula ou nome lido (Ctrl+L)')
+        self.search_edit.setAccessibleName('Buscar no lote')
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setMinimumWidth(150)
+        self.search_edit.setMaximumWidth(260)
+        self.search_edit.textChanged.connect(self.on_search_changed)
+        self.next_btn = small_button(
+            'Próximo a revisar', 'Selecionar o próximo arquivo que precisa de conferência (F3)'
+        )
+        self.next_btn.clicked.connect(self.select_next_attention)
         head.addWidget(title)
         head.addStretch(1)
+        head.addWidget(self.search_edit, 1)
         head.addWidget(self.filter_combo)
+        head.addWidget(self.next_btn)
         head.addWidget(self.edit_btn)
         layout.addLayout(head)
+        for sequence, handler in (('Ctrl+L', self.focus_search), ('F3', self.select_next_attention)):
+            QShortcut(QKeySequence(sequence), self, activated=handler, context=Qt.WidgetWithChildrenShortcut)
         self.summary_label = QLabel('')
         self.summary_label.setObjectName('summary')
         self.summary_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
@@ -327,6 +434,8 @@ class RenamerPage(QWidget):
         self.tree = QTreeWidget()
         self.tree.setColumnCount(len(COLUMNS))
         self.tree.setHeaderLabels(list(COLUMNS))
+        self.status_delegate = StatusDelegate(self.tree)
+        self.tree.setItemDelegateForColumn(4, self.status_delegate)
         self.tree.setRootIsDecorated(False)
         self.tree.setUniformRowHeights(True)
         self.tree.setAlternatingRowColors(False)
@@ -349,7 +458,10 @@ class RenamerPage(QWidget):
         ):
             for key in keys:
                 QShortcut(QKeySequence(key), self.tree, activated=handler, context=Qt.WidgetShortcut)
-        layout.addWidget(self.tree, 1)
+        self.list_stack = QStackedWidget()
+        self.list_stack.addWidget(self._build_empty_state())
+        self.list_stack.addWidget(self.tree)
+        layout.addWidget(self.list_stack, 1)
         self.tip_label = QLabel(
             'Dica: selecione vários arquivos com Shift ou Ctrl. Clique com o botão direito para mais ações.'
         )
@@ -357,6 +469,43 @@ class RenamerPage(QWidget):
         self.tip_label.setWordWrap(True)
         layout.addWidget(self.tip_label)
         return card
+
+    def _build_empty_state(self):
+        """Lote vazio: um convite para arrastar os documentos, no lugar de uma tabela em branco."""
+        zone = QFrame()
+        zone.setObjectName('dropzone')
+        layout = QVBoxLayout(zone)
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(8)
+        layout.addStretch(1)
+        layout.addWidget(BrandMark(56), 0, Qt.AlignHCenter)
+        title = QLabel('Arraste aqui as folhas de ponto, atestados e declarações')
+        title.setObjectName('cardTitle')
+        title.setWordWrap(True)
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title, 0, Qt.AlignHCenter)
+        hint = QLabel('PDF ou imagens (JPG, PNG, TIFF, BMP, WEBP). Também dá para soltar uma pasta inteira.')
+        hint.setObjectName('hint')
+        hint.setWordWrap(True)
+        hint.setAlignment(Qt.AlignCenter)
+        layout.addWidget(hint, 0, Qt.AlignHCenter)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addStretch(1)
+        add = QPushButton('Adicionar arquivos')
+        add.setProperty('variant', 'primary')
+        add.clicked.connect(self.select_files)
+        folder = QPushButton('Selecionar pasta')
+        folder.clicked.connect(self.select_folder)
+        row.addWidget(add)
+        row.addWidget(folder)
+        row.addStretch(1)
+        layout.addLayout(row)
+        steps = QLabel('1. Adicione  ·  2. Analise  ·  3. Confira e exporte com os nomes novos')
+        steps.setObjectName('hint')
+        layout.addWidget(steps, 0, Qt.AlignHCenter)
+        layout.addStretch(1)
+        return zone
 
     def _build_preview_card(self):
         card, layout = make_card(16)
@@ -412,12 +561,17 @@ class RenamerPage(QWidget):
         self.cancel_btn = QPushButton('Cancelar análise')
         self.cancel_btn.clicked.connect(self.request_cancel_analysis)
         self.cancel_btn.setEnabled(False)
+        self.open_export_btn = QPushButton('Abrir pasta exportada')
+        self.open_export_btn.setProperty('variant', 'quiet')
+        self.open_export_btn.clicked.connect(lambda: self.open_folder(self.last_export_folder))
+        self.open_export_btn.hide()
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
         self.progress.setTextVisible(False)
         self.progress.setFixedWidth(210)
         footer.addWidget(self.status_label, 1)
+        footer.addWidget(self.open_export_btn)
         footer.addWidget(self.cancel_btn)
         footer.addWidget(self.progress)
         return footer
@@ -477,6 +631,7 @@ class RenamerPage(QWidget):
             self.tree.addTopLevelItem(item)
             self.items[path] = item
             self.refresh_item(path)
+        self.list_stack.setCurrentIndex(1 if self.batch.files else 0)
         self.apply_filter()
         self.update_summary()
         self.update_buttons()
@@ -486,13 +641,18 @@ class RenamerPage(QWidget):
         if item is None:
             return
         values = self.batch.row_values(path)
-        foreground, background = TONES[status_tone(values[4])]
+        foreground, background = tone_colors(status_tone(values[4]))
         for column, value in enumerate(values):
             item.setText(column, value)
             item.setForeground(column, QBrush(QColor(foreground)))
             item.setBackground(column, QBrush(QColor(background)) if background else QBrush())
         item.setToolTip(0, str(self.batch.source(path)))
         item.setToolTip(1, values[1])
+
+    def on_theme_changed(self, _name=None):
+        """As cores dos status ficam gravadas em cada linha: pinta de novo com o tema novo."""
+        for path in self.items:
+            self.refresh_item(path)
 
     def refresh_all(self):
         for path in self.items:
@@ -511,8 +671,10 @@ class RenamerPage(QWidget):
             self.clear_preview()
         self.update_buttons()
         if announce:
+            search = f' com "{self.batch.text_filter}"' if self.batch.text_filter.strip() else ''
             self.set_status(
-                f'Filtro {self.batch.filter_status}: {len(visible)} de {len(self.batch.files)} arquivo(s) exibido(s).'
+                f'Filtro {self.batch.filter_status}{search}: {len(visible)} de {len(self.batch.files)} '
+                'arquivo(s) exibido(s).'
             )
 
     def update_summary(self):
@@ -522,6 +684,9 @@ class RenamerPage(QWidget):
         selected = bool(self.tree.selectedItems())
         self.verify_btn.setEnabled(selected and not self.analysis_running)
         self.edit_btn.setEnabled(len(self.tree.selectedItems()) == 1 and not self.analysis_running)
+        attention = self.batch.attention_count()
+        self.next_btn.setEnabled(bool(attention))
+        self.next_btn.setText(f'Próximo a revisar ({attention})' if attention else 'Próximo a revisar')
 
     def sync_controls(self):
         """Põe nos campos da tela o que está no lote (depois de recuperar uma sessão, por exemplo)."""
@@ -534,6 +699,39 @@ class RenamerPage(QWidget):
     def on_selection_changed(self):
         self.update_buttons()
         self.select_timer.start()
+
+    def on_search_changed(self, text):
+        self.batch.text_filter = text
+        self.apply_filter(announce=bool(text.strip()))
+
+    def focus_search(self):
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+
+    def select_next_attention(self):
+        """F3: seleciona o próximo arquivo que precisa de conferência (revisar ou com erro) e mostra a página."""
+        visible = [path for path in self.batch.files if not self.items[path].isHidden()] if self.items else []
+        current = self.selected_paths()
+        after = current[-1] if current else None
+        target = self.batch.next_needing_attention(after, visible)
+        if target is None and self.batch.attention_count():
+            # escondido pelo filtro ou pela busca: mostra todos e tenta de novo
+            self.search_edit.clear()
+            self.batch.filter_status = 'Todos'
+            self.filter_combo.setCurrentText('Todos')
+            self.apply_filter()
+            target = self.batch.next_needing_attention(after)
+        if target is None:
+            self.set_status('Nenhum arquivo precisa de revisão.')
+            return None
+        self.tree.clearSelection()
+        item = self.items[target]
+        item.setSelected(True)
+        self.tree.setCurrentItem(item)
+        self.tree.scrollToItem(item)
+        self.show_selected()
+        self.set_status(f'Revisar: {self.batch.display_name(target)} ({self.batch.status(target)}).')
+        return target
 
     def on_filter_changed(self, text):
         self.batch.filter_status = text
@@ -701,6 +899,7 @@ class RenamerPage(QWidget):
             self.refresh_item(path)
         self.progress.setRange(0, len(paths))
         self.progress.setValue(0)
+        self.analysis_started = time.monotonic()
         if selected_only:
             self.set_status(f'Verificando {len(paths)} arquivo(s) selecionado(s).')
         self.set_busy(True)
@@ -755,11 +954,20 @@ class RenamerPage(QWidget):
         self.update_summary()
         self.schedule_save()
 
+    def remaining_text(self, done, total):
+        """Estimativa do tempo que falta, a partir do ritmo até agora (só depois de alguns arquivos)."""
+        if done < 2 or done >= total or not self.analysis_started:
+            return ''
+        elapsed = time.monotonic() - self.analysis_started
+        return format_remaining(elapsed / done * (total - done))
+
     def on_analysis_progress(self, done, total, path):
         self.analysis_completed = done
         self.progress.setValue(done)
         action = 'Finalizando' if self.cancel_event.is_set() else 'Processando'
-        self.set_status(f'{action} {done} de {total}: {self.batch.display_name(path)}')
+        remaining = '' if self.cancel_event.is_set() else self.remaining_text(done, total)
+        suffix = f'  ·  {remaining} restante(s)' if remaining else ''
+        self.set_status(f'{action} {done} de {total}: {self.batch.display_name(path)}{suffix}')
 
     def on_analysis_fatal(self, error):
         self.error('Análise interrompida', f'A análise foi interrompida:\n{error}')
@@ -767,6 +975,9 @@ class RenamerPage(QWidget):
     def finish_analysis(self):
         cancelled, discard = self.analysis_cancelled, self.analysis_discard
         self.set_busy(False)
+        if self.discarded:  # a tela já tinha saído: só falta apagar as cópias temporárias
+            inputs.cleanup_generated_files(self.batch.generated_files)
+            return
         self.format_combo.setCurrentText(self.batch.set_output_format(self.format_combo.currentText()))
         if discard:
             self.batch.restore_snapshot(self.analysis_snapshot or {})
@@ -895,6 +1106,11 @@ class RenamerPage(QWidget):
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(original))
 
+    @staticmethod
+    def open_folder(folder):
+        if folder:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
     def open_selected_folder(self):
         path = self.single_path()
         if path:
@@ -934,7 +1150,7 @@ class RenamerPage(QWidget):
                 f'Modificado: {datetime.fromtimestamp(stat.st_mtime).astimezone().strftime("%d/%m/%Y %H:%M:%S")}',
             ]
             if original.suffix.lower() == '.pdf':
-                with fitz.open(original) as document:
+                with FITZ_LOCK, fitz.open(original) as document:
                     details.append(f'Páginas: {len(document)}')
             self.info('Propriedades do arquivo', '\n'.join(details))
         except (OSError, RuntimeError) as exc:
@@ -1047,6 +1263,8 @@ class RenamerPage(QWidget):
             self.schedule_save()
             return
         self.set_status(f'{result.count} arquivo(s) exportado(s) para {chosen}')
+        self.last_export_folder = chosen
+        self.open_export_btn.show()
         self.save_timer.stop()
         Batch.discard_session_file()
         self.batch.persistence_disabled = True
@@ -1170,10 +1388,16 @@ class RenamerPage(QWidget):
             return True
 
     def discard_work(self):
-        """Zera a tela: apaga a sessão salva e os arquivos temporários (separados/convertidos)."""
+        """Zera a tela: apaga a sessão salva e os arquivos temporários (separados/convertidos).
+
+        Se uma análise cancelada ainda está terminando os arquivos em leitura, os temporários são apagados quando ela
+        acabar (finish_analysis): são cópias de documentos com dados pessoais."""
+        self.discarded = True
         self.save_timer.stop()
         self.batch.persistence_disabled = True
         Batch.discard_session_file()
+        if self.analysis_running:
+            return  # sem o aviso de prepare_close: o usuário já escolheu sair; finish_analysis apaga os temporários
         self.prepare_close()
 
     # ---- prévia --------------------------------------------------------------------------
@@ -1255,6 +1479,7 @@ class RenamerPage(QWidget):
         self.tree.setColumnHidden(3, narrow)
         self.order_hint.setVisible(not narrow)
         self.edit_btn.setText('Editar' if narrow else 'Editar dados')
+        self.search_edit.setMaximumWidth(150 if narrow else 260)
         self.tree.setColumnWidth(0, 130 if narrow else 220)
         self.tip_label.setVisible(not short)
         self.select_files_btn.setText('Adicionar' if narrow else 'Adicionar arquivos')

@@ -2,13 +2,17 @@
 
 import sys
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
+from rdf import APP_VERSION
+from rdf.core import settings
 from rdf.core.autostart import BACKGROUND_FLAG
-from rdf.core.config import app_base_dir, init, sweep_stale_data
+from rdf.core.config import SETTINGS_FILE, app_base_dir, init, sweep_stale_data
+from rdf.qt import errors, theme
 from rdf.qt.single_instance import InstanceServer, files_from_args, send_to_running
-from rdf.qt.theme import FONT_FAMILY, build_stylesheet
+from rdf.qt.theme import FONT_FAMILY
 from rdf.qt.tray import TrayController
 from rdf.qt.window import MainWindow
 
@@ -17,9 +21,31 @@ def create_app(argv=None):
     """QApplication com a fonte e o tema do RDF. Usado também pelos testes."""
     app = QApplication.instance() or QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName('RDF')
+    app.setApplicationVersion(APP_VERSION)
+    app.setStyle('Fusion')  # segue a paleta do tema (claro ou escuro) também no que a folha de estilo não cobre
     app.setFont(QFont(FONT_FAMILY, 10))
-    app.setStyleSheet(build_stylesheet())
+    theme.apply(app, settings.current().get('theme'))
     return app
+
+
+TRAY_WAIT_SECONDS = 45  # no login, a área de notificação do Windows pode demorar a aparecer
+
+
+def wait_for_tray(window, seconds=TRAY_WAIT_SECONDS, interval_ms=1000):
+    """Início automático sem bandeja ainda: espera ela aparecer (logo depois do login o Explorer pode não estar
+    pronto). Se aparecer, o RDF fica escondido nela, como pedido; se não, mostra a janela, o único jeito de voltar."""
+
+    def check(remaining):
+        if window.tray is not None:
+            return
+        if TrayController.available():
+            window.attach_tray(TrayController(window))
+        elif remaining <= 0:
+            window.show()
+        else:
+            QTimer.singleShot(interval_ms, window, lambda: check(remaining - 1))
+
+    check(seconds)
 
 
 def main(argv=None):
@@ -36,6 +62,8 @@ def main(argv=None):
         if send_to_running(files):
             return 0
     init(app_base_dir())  # pastas de dados, log e Tesseract: igual ao app atual
+    errors.install()  # daqui em diante, nenhum erro some calado
+    theme.apply(app, settings.load(SETTINGS_FILE).get('theme'))
     if first:  # só o primeiro processo é dono das pastas temporárias
         sweep_stale_data()
     app.setQuitOnLastWindowClosed(False)  # quem encerra é a janela ao fechar de verdade (ou o "Sair" da bandeja)
@@ -43,8 +71,10 @@ def main(argv=None):
     tray = TrayController(window) if TrayController.available() else None
     window.attach_tray(tray)
     server.filesReceived.connect(window.receive_print_files)
-    if files or not (background and tray is not None):  # sem bandeja não há como reabrir: mostra a janela
+    if files or not background:
         window.show()
+    elif tray is None:  # início automático antes de a bandeja existir: espera por ela antes de mostrar a janela
+        wait_for_tray(window)
     if files:
         window.receive_print_files(files)
     return app.exec()

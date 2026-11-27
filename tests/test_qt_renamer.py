@@ -111,11 +111,15 @@ class RenamerCase(unittest.TestCase):
         page.choose_folder = lambda title='': self.chosen_folder
 
     def close_page(self):
+        from PySide6.QtCore import QEvent
+
         self.page.loader.wait(2000)
         self.page.save_timer.stop()
         self.page.close()
         self.page.deleteLater()
         self.app.processEvents()
+        if self.page.is_finished():  # com uma análise ainda rodando, a tela não pode ser apagada embaixo dela
+            self.app.sendPostedEvents(None, QEvent.DeferredDelete)  # apaga de verdade: janelas velhas pesam nos testes
 
     # ---- apoio ----
     def pump(self, seconds=0.05):
@@ -758,21 +762,28 @@ class WindowTests(unittest.TestCase):
             patch = mock.patch.object(config, name, value)
             patch.start()
             self.addCleanup(patch.stop)
+        from rdf.core import settings
+
+        settings.reset()  # cada teste começa sem favoritas, recentes nem janela salva
         self.window = MainWindow()
         self.window.show()
         self.addCleanup(self.window.deleteLater)
 
     def test_the_renamer_offers_to_restore_a_session_the_first_time_it_opens(self):
-        with mock.patch.object(RenamerPage, 'offer_restore_session') as offer:
-            self.window.open_tool('renamer')
+        with mock.patch.object(RenamerPage, 'offer_restore_session', autospec=True) as offer:
+            page = self.window.open_tool('renamer')
+
+            def mine():  # só as chamadas desta tela (outra janela de um teste anterior pode ainda existir)
+                return [call for call in offer.call_args_list if call.args and call.args[0] is page]
+
             deadline = time.monotonic() + 3
-            while not offer.called and time.monotonic() < deadline:
+            while not mine() and time.monotonic() < deadline:
                 self.app.processEvents()
                 time.sleep(0.01)
             self.window.show_home()
-            self.window.open_tool('renamer')
+            self.assertIs(self.window.open_tool('renamer'), page)
             self.app.processEvents()
-        offer.assert_called_once()
+            self.assertEqual(len(mine()), 1)
 
     def test_the_window_will_not_close_during_an_analysis(self):
         page = self.window.open_tool('renamer')

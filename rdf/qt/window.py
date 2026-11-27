@@ -2,7 +2,7 @@
 
 import time
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QByteArray, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -14,18 +14,20 @@ from PySide6.QtWidgets import (
 )
 
 from rdf import APP_VERSION
-from rdf.core import autostart
+from rdf.core import autostart, settings
 from rdf.core.config import resource_path
 from rdf.pdftools.registry import TOOLS_BY_ID
+from rdf.qt import app_dialogs, theme
 from rdf.qt.home import HomePage
 from rdf.qt.merge_page import MergePage
+from rdf.qt.metadata_page import MetadataPage
 from rdf.qt.renamer import RenamerPage
 from rdf.qt.tool_page import ToolPage
 
 APP_TITLE = f'RDF - Ferramentas de PDF v{APP_VERSION}'
 PREFERRED_SIZE = (1500, 940)
 MINIMUM_SIZE = (780, 520)
-CUSTOM_PAGES = {'merge': MergePage}  # ferramentas com tela própria derivada da padrão
+CUSTOM_PAGES = {'merge': MergePage, 'metadata': MetadataPage}  # ferramentas com tela própria derivada da padrão
 INCOMING_DELAY_MS = 600  # o Explorer abre o RDF uma vez por arquivo: espera os outros chegarem antes de abrir a tela
 CANCEL_WAIT_SECONDS = 20  # quanto esperar a tarefa parar quando o usuário cancela para sair
 
@@ -58,6 +60,10 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.home = HomePage()
         self.home.toolRequested.connect(self.open_tool)
+        self.home.themeRequested.connect(self.set_theme)
+        self.home.settingsRequested.connect(self.show_settings)
+        self.home.aboutRequested.connect(self.show_about)
+        self.home.shortcutsRequested.connect(self.show_shortcuts)
         self.stack.addWidget(self.home)
         row.addWidget(self.stack, 1)
 
@@ -65,9 +71,59 @@ class MainWindow(QMainWindow):
             (Qt.Key_Escape, self.on_escape),
             ('Ctrl+F', self.focus_search),
             ('Ctrl+K', self.focus_search),
+            ('F1', self.show_shortcuts),
+            ('Ctrl+,', self.show_settings),
+            ('Ctrl+Shift+T', self.toggle_theme),
         ):
             QShortcut(QKeySequence(sequence), self, activated=handler)
-        self.fit_to_screen()
+        settings.current().forget_tools(TOOLS_BY_ID)  # favoritas de ferramentas que não existem mais
+        if not self.restore_geometry():
+            self.fit_to_screen()
+
+    # ---- tamanho da janela ---------------------------------------------------------------
+    def restore_geometry(self):
+        """Volta ao tamanho e à posição da última vez. False se não havia nada salvo (ou não serve mais)."""
+        saved = settings.current().get('window_geometry')
+        if not saved:
+            return False
+        try:
+            if not self.restoreGeometry(QByteArray.fromBase64(saved.encode('ascii'))):
+                return False
+        except (ValueError, UnicodeEncodeError):
+            return False
+        area = QGuiApplication.primaryScreen().availableVirtualGeometry()
+        if not area.intersects(self.frameGeometry()):  # o monitor onde ela estava foi desligado
+            return False
+        self.setMinimumSize(min(MINIMUM_SIZE[0], area.width() - 20), min(MINIMUM_SIZE[1], area.height() - 40))
+        return True
+
+    def save_geometry(self):
+        settings.current().set('window_geometry', bytes(self.saveGeometry().toBase64()).decode('ascii'))
+
+    # ---- tema, configurações e ajuda -----------------------------------------------------
+    def set_theme(self, mode):
+        settings.current().set('theme', mode)
+        return theme.apply(None, mode)
+
+    def toggle_theme(self):
+        """Ctrl+Shift+T: alterna entre claro e escuro (sai do modo "igual ao Windows")."""
+        return self.set_theme('claro' if theme.is_dark() else 'escuro')
+
+    def make_settings_dialog(self):
+        dialog = app_dialogs.SettingsDialog(self, app_dialogs.tesseract_path())
+        dialog.themeChanged.connect(lambda mode: theme.apply(None, mode))
+        return dialog
+
+    def show_settings(self):
+        dialog = self.make_settings_dialog()
+        dialog.exec()
+        self.home.sync()  # "Limpar favoritas e recentes" muda a tela inicial
+
+    def show_about(self):
+        app_dialogs.about_dialog(self, app_dialogs.tesseract_path()).exec()
+
+    def show_shortcuts(self):
+        app_dialogs.shortcuts_dialog(self).exec()
 
     @property
     def back_button(self):
@@ -88,6 +144,7 @@ class MainWindow(QMainWindow):
     def show_home(self):
         self.setWindowTitle(APP_TITLE)
         self.current_id = None
+        self.home.sync()  # a ferramenta que acabou de ser usada entra nas recentes
         self.stack.setCurrentWidget(self.home)
 
     def open_tool(self, tool_id):
@@ -99,8 +156,9 @@ class MainWindow(QMainWindow):
             self.pages[tool_id] = page
             self.stack.addWidget(page)
             if tool.special:  # primeira vez: oferece continuar o lote da última sessão
-                QTimer.singleShot(350, lambda: self._offer_restore(page))
+                QTimer.singleShot(350, self, lambda: self._offer_restore(page))  # morre junto com a janela
         self.current_id = tool_id
+        settings.current().record_use(tool_id)
         self.setWindowTitle(f'{tool.title} - {APP_TITLE}')  # o nome da ferramenta fica na barra de título
         self.stack.setCurrentWidget(page)
         return page
@@ -230,6 +288,25 @@ class MainWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
 
+    def finish_retired(self):
+        """Ao fechar: as telas que já saíram, mas ainda terminam uma tarefa cancelada, têm um tempo para parar.
+
+        Elas não podem impedir o fechamento (o usuário nem as vê mais); o que deixarem de temporário é apagado quando
+        terminarem, ou pela limpeza da próxima abertura."""
+        waiting = [page for page in self._retired if page.running or not page.is_finished()]
+        if not waiting:
+            return
+        for page in waiting:
+            page.cancel_for_exit()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            deadline = time.monotonic() + (2 if self.is_ending_session() else CANCEL_WAIT_SECONDS)
+            while any(p.running or not p.is_finished() for p in waiting) and time.monotonic() < deadline:
+                QApplication.processEvents()
+                time.sleep(0.01)
+        finally:
+            QApplication.restoreOverrideCursor()
+
     def reset_tool(self, tool_id):
         """Vai para o início e apaga a tela da ferramenta: ao abrir de novo, ela vem zerada."""
         page = self.pages.pop(tool_id, None)
@@ -293,11 +370,12 @@ class MainWindow(QMainWindow):
             event.ignore()
             self.hide_to_tray()
             return
-        for page in [*self.pages.values(), *self._retired]:
+        for page in self.pages.values():
             # O renomeador tem fechamento próprio: não fecha no meio da análise e salva a sessão.
             if hasattr(page, 'prepare_close') and not page.prepare_close():
                 event.ignore()
                 return
+        self.finish_retired()
         busy = [
             page
             for page in self.pages.values()
@@ -315,6 +393,7 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         event.accept()
+        self.save_geometry()
         if self.tray is not None:
             self.tray.hide()  # senão o ícone fica na bandeja até o mouse passar por cima
         QApplication.quit()  # com o fim da última janela desligado (bandeja), é isto que encerra o programa

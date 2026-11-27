@@ -11,11 +11,23 @@ por texto embutido ou OCR (Tesseract) e renomear os arquivos com revisão humana
 | Categoria | Ferramentas |
 |---|---|
 | Folha de ponto | Renomear folhas de ponto (matrícula, nome e mês; atestados e declarações) |
-| Organizar | Unir (com botão Imprimir, pela janela de impressão do Windows), Dividir, Remover páginas, Extrair páginas, Organizar páginas |
+| Organizar | Unir (com botão Imprimir, pela janela de impressão do Windows), Dividir, Remover páginas, Extrair páginas, Organizar páginas, Várias páginas por folha |
 | Otimizar | Comprimir, Reparar, OCR (PDF pesquisável) |
-| Converter | Imagem para PDF, PDF para imagem (páginas em JPG/PNG ou imagens embutidas) |
-| Editar | Girar, Cortar margens, Números de página, Marca d'água |
-| Segurança | Proteger (AES-256) e Desbloquear PDF |
+| Converter | Imagem para PDF, PDF para imagem (páginas em JPG/PNG ou imagens embutidas), PDF para texto (.txt) |
+| Editar | Girar, Cortar margens, Números de página, Marca d'água, Escala de cinza, Ajustar tamanho do papel |
+| Segurança | Proteger (AES-256), Desbloquear PDF, Tarjar dados (LGPD: CPF, CNPJ, e-mail, telefone e textos), Metadados do PDF |
+
+Em Remover, Extrair e Organizar páginas, as páginas aparecem como **miniaturas**: clicar nelas (ou arrastar, em
+Organizar) preenche o campo de páginas, e digitar no campo marca as miniaturas.
+
+### Interface
+
+- Tema **claro, escuro ou igual ao Windows** (troca na hora; contraste conferido nos dois temas pelos testes).
+- Tela inicial com **favoritas** (estrela ou Ctrl+D), **usadas recentemente**, filtros por categoria e busca que não
+  diferencia acentos. Enter abre o primeiro resultado e as setas andam entre as ferramentas.
+- **Configurações** (Ctrl+,), **Sobre** e **atalhos do teclado** (F1). A janela volta com o tamanho e a posição da
+  última vez.
+- No renomeador: status em cores, busca no lote (Ctrl+L) e **Próximo a revisar** (F3).
 
 ### Outros tipos de arquivo
 
@@ -28,7 +40,7 @@ Fora do escopo por enquanto: converter PDF para Word, Excel e PowerPoint, assina
 
 ## Requisitos
 
-- Python 3.10 ou superior
+- Python 3.11 ou superior (o Pillow fixado em `requirements.txt` não instala no 3.10)
 - [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) com os idiomas `por` e `eng`, usado pelo OCR e pelo
   renomeador (o app procura nas pastas comuns; para outro local, crie `tesseract_path.txt` na raiz com o caminho do `tesseract.exe`)
 
@@ -42,7 +54,8 @@ python -m venv .venv
 
 `python rdf_app.py` faz o mesmo (é o ponto de entrada usado pelo PyInstaller e pelo `Iniciar RDF.bat`).
 
-O app abre em Qt (PySide6).
+O app abre em Qt (PySide6). As preferências (tema, favoritas, tamanho da janela) ficam em
+`%LOCALAPPDATA%\RDF\preferencias.json`, junto com o log e a sessão do renomeador.
 
 ### Imprimir pelo menu do botão direito (abre "Unir PDF")
 
@@ -82,17 +95,26 @@ rdf/
 ├── __init__.py          APP_VERSION
 ├── __main__.py          python -m rdf: abre o app em Qt
 ├── core/                renomeador de folhas, sem interface
-│   ├── batch.py         o lote: arquivos, linhas, status, nomes e sessão
+│   ├── batch.py         o lote: arquivos, linhas, status, nomes, sessão, busca e "próximo a revisar"
+│   ├── settings.py      preferências do usuário (tema, favoritas, recentes, janela), gravadas com segurança
 │   ├── inputs.py        entrada de arquivos: limites, conversão de imagens, separação de páginas
 │   ├── analysis_runner.py  leitura em paralelo, com cancelamento
 │   ├── exporter.py      exportação com nomes novos, sem nunca sobrescrever
 │   └── ocr.py, parsing.py, classifier.py, naming.py ...  leitura e classificação dos documentos
 ├── pdftools/            ferramentas de PDF, sem interface
 │   ├── ops.py           as operações (unir, dividir, comprimir, girar, proteger, ...)
-│   ├── pages.py         leitura de intervalos como "1-3, 5, 8-"
+│   ├── pages.py         leitura (e escrita) de intervalos como "1-3, 5, 8-"
 │   ├── jobs.py          destinos sem colisão, valores das opções, execução e resumo
 │   └── registry.py      catálogo: opções de cada ferramenta e a operação que executa
-└── qt/                  janela Qt: tema, tela inicial, ferramentas e renomeador
+└── qt/                  janela Qt
+    ├── theme.py         paletas clara e escura, folha de estilo e troca de tema em tempo real
+    ├── home.py          tela inicial (busca, favoritas, recentes, filtros)
+    ├── tool_page.py     tela padrão das ferramentas (montada a partir do catálogo)
+    ├── page_picker.py   miniaturas para escolher e reordenar páginas
+    ├── thumbnails.py    miniaturas e prévia desenhadas em segundo plano
+    ├── renamer.py       tela do renomeador de folhas
+    ├── app_dialogs.py   Configurações, Sobre e atalhos
+    └── errors.py        erros inesperados vão para o log e aparecem num aviso
 tests/                   testes de comportamento (unittest)
 assets/                  ícone do aplicativo
 docs/                    histórico de versões, leia-me e termos de uso (docs/termos)
@@ -105,6 +127,9 @@ packaging/               script de build e instalador (Inno Setup)
 2. Acrescente um `Tool` em `rdf/pdftools/registry.py` com as opções que ela pede. A tela, o formulário, a validação,
    o "salvar como" e a execução em segundo plano aparecem sozinhos.
 3. O teste `test_default_options_run_every_tool_end_to_end` já cobre a ferramenta nova com as opções padrão.
+4. Opcional: um ícone em `TOOL_ICONS` (código da fonte Segoe MDL2 Assets), o selo "Novo" em `NEW_TOOLS`, miniaturas
+   de páginas com `page_picker=('select', 'pages')` e outro formato de saída com `output_ext='txt'`.
+5. Use só cores do tema (`rdf/qt/theme.py`): nenhuma tela define cores próprias, para o tema escuro funcionar.
 
 ## Dados pessoais
 

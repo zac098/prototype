@@ -54,6 +54,9 @@ class QtTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name)
+        from rdf.core import settings
+
+        settings.reset()  # cada teste começa sem favoritas, recentes nem janela salva
         self.window = MainWindow()
         self.window.resize(1100, 700)
         self.window.show()
@@ -63,9 +66,12 @@ class QtTestCase(unittest.TestCase):
         self.addCleanup(patch.stop)
 
     def close_window(self):
+        from PySide6.QtCore import QEvent
+
         self.window.close()
         self.window.deleteLater()
         self.app.processEvents()
+        self.app.sendPostedEvents(None, QEvent.DeferredDelete)  # apaga de verdade: janelas velhas pesam nos testes
 
     def wait_until(self, condition, timeout=10.0):
         deadline = time.monotonic() + timeout
@@ -82,7 +88,7 @@ class StyleTests(QtTestCase):
         self.assertNotIn('@', css)
         self.assertIn(COLORS['brand'], css)
         icon_paths = [part.split('"')[1] for part in css.split('url(')[1:]]
-        self.assertEqual(len(icon_paths), 2)
+        self.assertEqual(len(icon_paths), 4)  # tique, seta da lista e setas do campo numérico
         for path in icon_paths:
             self.assertTrue(Path(path).is_file(), path)
 
@@ -259,7 +265,7 @@ class ToolPageTests(QtTestCase):
         page.add_paths([str(make_pdf(self.tmp / 'a.pdf', 2)), str(make_pdf(self.tmp / 'b.pdf', 3))])
         self.assertEqual(page.counter.text(), '2 arquivos  ·  5 páginas')
         self.assertEqual(page.tree.topLevelItemCount(), 2)
-        self.assertFalse(page.preview.pixmap().isNull())
+        self.wait_until(lambda: not page.preview.pixmap().isNull())  # desenhada em segundo plano
 
     def test_duplicates_are_ignored_and_files_can_be_moved_and_removed(self):
         page = self.window.open_tool('merge')

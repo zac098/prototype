@@ -12,7 +12,7 @@ set "PYTHON_COMMAND="
 rem Prefer the Python launcher, then search common commands and installation paths.
 where py.exe >nul 2>&1
 if not errorlevel 1 (
-    for %%V in (3.13 3.14 3.12 3.11 3.10 3) do (
+    for %%V in (3.13 3.14 3.12 3.11 3) do (
         if not defined PYTHON_MODE (
             py -%%V --version >nul 2>&1
             if not errorlevel 1 (
@@ -24,7 +24,7 @@ if not errorlevel 1 (
 )
 
 if not defined PYTHON_MODE (
-    for %%P in (python3.14.exe python3.13.exe python3.12.exe python3.11.exe python3.10.exe python3.exe python.exe) do (
+    for %%P in (python3.14.exe python3.13.exe python3.12.exe python3.11.exe python3.exe python.exe) do (
         if not defined PYTHON_MODE (
             where %%P >nul 2>&1
             if not errorlevel 1 (
@@ -48,7 +48,7 @@ if not defined PYTHON_MODE (
 )
 
 if not defined PYTHON_MODE (
-    for %%P in (python3.14.exe python3.13.exe python3.12.exe python3.11.exe python3.10.exe python3.exe python.exe) do (
+    for %%P in (python3.14.exe python3.13.exe python3.12.exe python3.11.exe python3.exe python.exe) do (
         if not defined PYTHON_MODE if exist "%LocalAppData%\Microsoft\WindowsApps\%%P" (
             "%LocalAppData%\Microsoft\WindowsApps\%%P" --version >nul 2>&1
             if not errorlevel 1 (
@@ -179,7 +179,7 @@ exit /b 0
 
 :PYTHON_NOT_FOUND
 echo ERROR: A supported Python installation was not found.
-echo Install Python 3.10 or newer and run this script again.
+echo Install Python 3.11 or newer and run this script again.
 goto END
 
 :TESSERACT_NOT_FOUND

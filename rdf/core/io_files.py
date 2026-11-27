@@ -5,6 +5,8 @@ from pathlib import Path
 import fitz
 from PIL import Image
 
+from rdf.core.fitz_lock import FITZ_LOCK
+
 INPUT_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp'}
 IMAGE_FORMAT_BY_EXTENSION = {
     '.png': 'PNG',
@@ -32,7 +34,7 @@ def validate_input_content(path):
                 raise ValueError('O arquivo tem extensão PDF, mas o conteúdo real é um vídeo MP4.')
             raise ValueError('O arquivo tem extensão PDF, mas o conteúdo não é um PDF válido.')
         try:
-            with fitz.open(file_path) as document:
+            with FITZ_LOCK, fitz.open(file_path) as document:
                 if len(document) < 1:
                     raise ValueError('O PDF não possui páginas.')
         except Exception as exc:

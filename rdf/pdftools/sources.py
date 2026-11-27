@@ -9,6 +9,7 @@ converte o resto (imagens, texto, HTML, SVG, quadrinhos CBZ e documentos do Offi
   computador, em segundo plano e com macros desligadas. Sem o Office, o app diz isso com clareza.
 """
 
+import codecs
 import contextlib
 import hashlib
 import html
@@ -24,6 +25,7 @@ from pathlib import Path
 import fitz
 from PIL import Image, ImageOps
 
+from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import ops
 
 IMAGE_EXTENSIONS = ops.IMAGE_EXTENSIONS
@@ -44,14 +46,16 @@ TEXT_MARGIN = 42  # pontos
 OFFICE_TIMEOUT_SECONDS = 180
 
 OFFICE_APPS = {  # extensão -> (programa, nome do processo)
-    **{ext: ('Word', 'WINWORD') for ext in WORD_EXTENSIONS},
-    **{ext: ('Excel', 'EXCEL') for ext in EXCEL_EXTENSIONS},
-    **{ext: ('PowerPoint', 'POWERPNT') for ext in POWERPOINT_EXTENSIONS},
+    **dict.fromkeys(WORD_EXTENSIONS, ('Word', 'WINWORD')),
+    **dict.fromkeys(EXCEL_EXTENSIONS, ('Excel', 'EXCEL')),
+    **dict.fromkeys(POWERPOINT_EXTENSIONS, ('PowerPoint', 'POWERPNT')),
 }
 
 # Os caminhos vão por variável de ambiente (RDF_ORIGEM e RDF_DESTINO), nunca dentro do texto do script: assim um nome
 # de arquivo com aspas ou símbolos não vira comando. AutomationSecurity=3 desliga as macros do documento aberto.
-# O Office às vezes responde "ocupado" logo depois de abrir (0x80010001): a função Tentar repete a chamada.
+# O Office às vezes responde "ocupado" logo depois de abrir (0x80010001, 0x8001010A): a função Tentar repete a chamada.
+# Word e Excel recebem uma senha qualquer ao abrir: um documento com senha falha na hora (e cai na mensagem de senha)
+# em vez de esperar, escondido, alguém digitar a senha até o tempo acabar.
 # Ao final, o que o RDF abriu é fechado, inclusive se a conversão falhou; o Word, Excel ou PowerPoint que o usuário
 # já tinha aberto nunca é fechado.
 _POWERSHELL_PRELUDE = (
@@ -61,37 +65,48 @@ _POWERSHELL_PRELUDE = (
     "function Tentar([scriptblock]$acao) { "
     "for ($i = 1; $i -le 8; $i++) { "
     "try { return (& $acao) } catch { "
-    "if ($i -eq 8 -or $_.Exception.Message -notmatch '0x8001000|0x800AC472') { throw }; "
+    "if ($i -eq 8 -or $_.Exception.Message -notmatch '0x8001000|0x8001010A|0x800AC472') { throw }; "
     "Start-Sleep -Milliseconds 700 } } }; "
     "$app = $null; $meus = @(); "
 )
 # Logo depois de criar o aplicativo: os processos que não existiam antes são os do RDF ($meus). Só eles são fechados,
-# então um Word que o usuário abra no meio da conversão nunca é tocado.
+# então um Word que o usuário abra no meio da conversão nunca é tocado. Os números também vão para um arquivo
+# (RDF_PIDS): se o Office travar e o tempo acabar, o RDF fecha esses processos (o PowerShell já terá sido encerrado).
 _POWERSHELL_OWN = (
     "$meus = @(Get-Process -Name '{process}' -ErrorAction SilentlyContinue | "
     "Where-Object { $antes -notcontains $_.Id } | ForEach-Object { $_.Id }); "
+    "if ($env:RDF_PIDS) { Set-Content -Path $env:RDF_PIDS -Value ($meus -join ',') -ErrorAction SilentlyContinue }; "
 )
+# No fim, o aplicativo só é fechado se não tiver outro documento aberto: o PowerPoint usa um só processo, e uma
+# apresentação que o usuário abra no meio da conversão entra no processo do RDF. Ela nunca é fechada à força.
 _POWERSHELL_CLEANUP = (
     "finally { "
-    "if ($app -and $meus.Count -gt 0) { try { $app.Quit() } catch {} }; "
-    "if ($meus.Count -gt 0) { Get-Process -Name '{process}' -ErrorAction SilentlyContinue | "
+    "$outros = 0; try { if ($app) { $outros = @COUNT@ } } catch {}; "
+    "if ($app -and $meus.Count -gt 0 -and $outros -eq 0) { try { $app.Quit() } catch {} }; "
+    "if ($meus.Count -gt 0 -and $outros -eq 0) { Get-Process -Name '{process}' -ErrorAction SilentlyContinue | "
     "Where-Object { $meus -contains $_.Id } | Stop-Process -Force -ErrorAction SilentlyContinue } }"
 )
+_DOCUMENT_COUNTS = {
+    'Word': '$app.Documents.Count',
+    'Excel': '$app.Workbooks.Count',
+    'PowerPoint': '$app.Presentations.Count',
+}
 _POWERSHELL_SCRIPTS = {
     'Word': (
         "try { $app = New-Object -ComObject Word.Application; @OWN@"
         "$app.Visible = $false; $app.DisplayAlerts = 0; $app.AutomationSecurity = 3; "
-        "$doc = Tentar { $app.Documents.Open($origem, $false, $true, $false) }; "
+        "$doc = Tentar { $app.Documents.Open($origem, $false, $true, $false, 'rdf-sem-senha') }; "
         "try { Tentar { $doc.ExportAsFixedFormat($destino, 17) } } finally { try { $doc.Close($false) } catch {} } } "
     ),
     'Excel': (
         "try { $app = New-Object -ComObject Excel.Application; @OWN@"
         "$app.Visible = $false; $app.DisplayAlerts = $false; $app.AutomationSecurity = 3; "
-        "$livro = Tentar { $app.Workbooks.Open($origem, 0, $true) }; "
+        "$livro = Tentar { $app.Workbooks.Open($origem, 0, $true, [Type]::Missing, 'rdf-sem-senha') }; "
         "try { Tentar { $livro.ExportAsFixedFormat(0, $destino) } } finally { try { $livro.Close($false) } catch {} } } "
     ),
     'PowerPoint': (
         "try { $app = New-Object -ComObject PowerPoint.Application; @OWN@"
+        "$app.AutomationSecurity = 3; "
         "$apresentacao = Tentar { $app.Presentations.Open($origem, -1, 0, 0) }; "
         "try { Tentar { $apresentacao.SaveAs($destino, 32) } } finally { try { $apresentacao.Close() } catch {} } } "
     ),
@@ -212,7 +227,7 @@ def convert_to_pdf(source, dest, progress=ops._noop):
     if ext in OFFICE_EXTENSIONS:
         _office_to_pdf(source, dest)
     else:
-        with ops.atomic_output(dest) as temp:
+        with FITZ_LOCK, ops.atomic_output(dest) as temp:
             if ext in IMAGE_EXTENSIONS:
                 document = _image_document(source)
             elif ext in TEXT_EXTENSIONS:
@@ -306,25 +321,30 @@ _TEXT_PAGE_CSS = (
 )
 
 
-def _text_document(path):
-    raw = path.read_bytes()
+def _decode_text(raw):
+    """O texto do arquivo: UTF-16 (o "Unicode" do Bloco de Notas e do Excel) pela marca no início, depois UTF-8 e,
+    por fim, o padrão do Windows (cp1252), que aceita qualquer byte."""
+    if raw.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return raw.decode('utf-16', errors='replace')
     for encoding in ('utf-8-sig', 'cp1252'):
         try:
-            text = raw.decode(encoding)
-            break
+            return raw.decode(encoding)
         except UnicodeDecodeError:
             continue
-    else:
-        text = raw.decode('latin-1')
+    return raw.decode('latin-1')
+
+
+def _text_document(path):
+    text = _decode_text(path.read_bytes())
     body = f'<pre>{html.escape(text)}</pre>'
-    return _html_document(f'<html><body>{body}</body></html>'.encode('utf-8'), path.name)
+    return _html_document(f'<html><body>{body}</body></html>'.encode(), path.name)
 
 
 def _html_document(data, name):
     if b'<style' not in data.lower():
-        data = data.replace(b'</head>', f'<style>{_TEXT_PAGE_CSS}</style></head>'.encode('utf-8'), 1)
+        data = data.replace(b'</head>', f'<style>{_TEXT_PAGE_CSS}</style></head>'.encode(), 1)
         if b'<style' not in data.lower():
-            data = f'<html><head><style>{_TEXT_PAGE_CSS}</style></head>'.encode('utf-8') + data + b'</html>'
+            data = f'<html><head><style>{_TEXT_PAGE_CSS}</style></head>'.encode() + data + b'</html>'
     try:
         document = fitz.open(stream=data, filetype='html')
     except Exception as exc:
@@ -347,7 +367,8 @@ def _office_to_pdf(source, dest):
     if not office_available(source):
         raise office_error(source)
     app, process = OFFICE_APPS[extension(source)]
-    script = _POWERSHELL_PRELUDE + _POWERSHELL_SCRIPTS[app].replace('@OWN@', _POWERSHELL_OWN) + _POWERSHELL_CLEANUP
+    cleanup = _POWERSHELL_CLEANUP.replace('@COUNT@', _DOCUMENT_COUNTS[app])
+    script = _POWERSHELL_PRELUDE + _POWERSHELL_SCRIPTS[app].replace('@OWN@', _POWERSHELL_OWN) + cleanup
     script = script.replace('{process}', process)
     dest.parent.mkdir(parents=True, exist_ok=True)
     # O nome temporário termina em .pdf: o Excel acrescenta ".pdf" a qualquer outro final e o arquivo sairia com
@@ -366,8 +387,22 @@ def _office_to_pdf(source, dest):
         temp.unlink(missing_ok=True)
 
 
+def _kill_recorded(pids_file):
+    """Fecha os processos do Office que o script anotou (o tempo acabou e o PowerShell já foi encerrado)."""
+    try:
+        recorded = [int(part) for part in pids_file.read_text(encoding='utf-8-sig').replace(',', ' ').split()]
+    except (OSError, ValueError):
+        return []
+    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    for pid in recorded:
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(['taskkill', '/PID', str(pid), '/F'], capture_output=True, timeout=15, creationflags=flags)
+    return recorded
+
+
 def _run_powershell(script, source, temp):
-    env = dict(os.environ, RDF_ORIGEM=str(source), RDF_DESTINO=str(temp))
+    pids_file = Path(temp).with_suffix('.pids')
+    env = dict(os.environ, RDF_ORIGEM=str(source), RDF_DESTINO=str(temp), RDF_PIDS=str(pids_file))
     flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     try:
         return subprocess.run(
@@ -381,12 +416,15 @@ def _run_powershell(script, source, temp):
             creationflags=flags,
         )
     except subprocess.TimeoutExpired as exc:
+        _kill_recorded(pids_file)  # o Office travado não fica escondido, segurando o arquivo
         raise ops.PdfToolError(
             f'A conversão de "{source.name}" demorou mais de {OFFICE_TIMEOUT_SECONDS} s e foi interrompida. '
             'Confira se o programa do Office não está esperando uma resposta sua.'
         ) from exc
     except OSError as exc:
         raise ops.PdfToolError(f'Não foi possível chamar o Office para converter "{source.name}": {exc}') from exc
+    finally:
+        pids_file.unlink(missing_ok=True)
 
 
 def _first_line(text):

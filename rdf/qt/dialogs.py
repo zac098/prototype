@@ -36,7 +36,8 @@ def _heading(text, tone=None):
     label = QLabel(text)
     label.setObjectName('pageTitle')
     if tone == 'error':
-        label.setStyleSheet('QLabel { color: #8f1713; }')
+        label.setObjectName('dialogTitle')
+        label.setProperty('tone', 'error')
     return label
 
 
@@ -155,7 +156,7 @@ def review_export_dialog(parent, review_items):
     if len(review_items) > 6:
         names += f'\n... e mais {len(review_items) - 6} arquivo(s).'
     listing = QLabel(names)
-    listing.setStyleSheet('QLabel { color: #7a4300; }')
+    listing.setProperty('tone', 'review')
     layout.addWidget(listing)
     result = []
     row = QHBoxLayout()
@@ -183,7 +184,7 @@ def blocking_export_dialog(parent, problems):
         details.append(f'... e mais {len(problems) - 8} arquivo(s).')
     listing = QLabel('\n'.join(details))
     listing.setWordWrap(True)
-    listing.setStyleSheet('QLabel { color: #8f1713; }')
+    listing.setProperty('tone', 'blocked')
     layout.addWidget(listing)
     result = []
     row = QHBoxLayout()

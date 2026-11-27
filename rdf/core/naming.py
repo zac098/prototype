@@ -18,10 +18,11 @@ def safe_filename(s):
 
 def compose_document_filename(path, document_type):
     """Inclui ATESTADO/DECLARAÇÃO no nome, preservando matrícula e sequência."""
-    stem = safe_filename(Path(path).stem)
+    stem = safe_filename(unicodedata.normalize('NFC', Path(path).stem))
     label = 'ATESTADO' if document_type == 'Atestado' else 'DECLARAÇÃO'
-    folded = unicodedata.normalize('NFKD', stem).encode('ascii', 'ignore').decode('ascii')
-    cleaned = re.sub(r'(?i)\b(?:ATESTADO|DECLARACAO)\b', ' ', folded)
+    folded = unicodedata.normalize('NFKD', stem).encode('ascii', 'ignore').decode('ascii')  # só para comparar
+    # Tira as palavras ATESTADO/DECLARAÇÃO do nome original (com ou sem acento), sem perder os acentos do resto.
+    cleaned = re.sub(r'(?i)\b(?:ATESTADO|DECLARA[CÇ][AÃ]O)\b', ' ', stem)
     cleaned = safe_filename(re.sub(r'\s*-\s*', ' - ', cleaned))
     lead = re.match(r'^\s*(\d{4,12})\b', cleaned)
     sequence = re.search(r'(?:^|\s*-\s*)(\d{1,3})\s*$', cleaned)

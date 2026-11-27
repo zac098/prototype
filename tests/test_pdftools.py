@@ -295,7 +295,15 @@ class RegistryTests(unittest.TestCase):
 
     def test_default_options_run_every_tool_end_to_end(self):
         """Cada ferramenta roda com as opções padrão (quando elas bastam) e gera arquivos reais."""
-        needs_input = {'remove', 'extract', 'organize', 'protect', 'ocr'}
+        needs_input = {
+            'remove',
+            'extract',
+            'organize',
+            'protect',
+            'ocr',
+            'redact',
+            'metadata',
+        }  # precisam de dados digitados
         with tempfile.TemporaryDirectory() as folder:
             tmp = Path(folder)
             pdf = make_pdf(tmp / 'a.pdf', 6)  # os intervalos padrão de Dividir vão até a página 6
@@ -329,7 +337,9 @@ class RegistryTests(unittest.TestCase):
 
     def test_there_is_no_separate_print_tool_printing_lives_in_merge(self):
         self.assertNotIn('print', TOOLS_BY_ID)
-        self.assertEqual([t.id for t in search_tools('imprimir')], ['merge'])
+        found = [t.id for t in search_tools('imprimir')]
+        self.assertEqual(found[0], 'merge')  # imprimir fica em Unir; as outras só ajudam a preparar a impressão
+        self.assertLessEqual(set(found), {'merge', 'n-up', 'grayscale'})
         self.assertIn('imprima', TOOLS_BY_ID['merge'].description)
 
 

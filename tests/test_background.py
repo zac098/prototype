@@ -122,6 +122,9 @@ class BackgroundCase(unittest.TestCase):
         self.addCleanup(enabled_patch.stop)
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
+        from rdf.core import settings
+
+        settings.reset()  # cada teste começa sem favoritas, recentes nem janela salva
         self.window = MainWindow()
         self.window.resize(900, 600)
         self.window.show()
@@ -130,10 +133,13 @@ class BackgroundCase(unittest.TestCase):
         self.window.attach_tray(self.tray)
 
     def close_window(self):
+        from PySide6.QtCore import QEvent
+
         self.window._quitting = True
         self.window.close()
         self.window.deleteLater()
         self.app.processEvents()
+        self.app.sendPostedEvents(None, QEvent.DeferredDelete)  # apaga de verdade: janelas velhas pesam nos testes
 
 
 class TrayMenuTests(BackgroundCase):
@@ -309,6 +315,10 @@ class MainFlagTests(unittest.TestCase):
             mock.patch.object(entry, 'init') as init,
             mock.patch.object(entry, 'MainWindow') as window_class,
             mock.patch.object(entry, 'TrayController') as tray_class,
+            # main() de verdade liga o gancho global de erros, lê as preferências e aplica o tema: aqui não
+            mock.patch.object(entry, 'errors'),
+            mock.patch.object(entry, 'settings'),
+            mock.patch.object(entry, 'theme'),
         ):
             server_class.return_value.listen.return_value = primary
             tray_class.available.return_value = tray_available
@@ -322,10 +332,57 @@ class MainFlagTests(unittest.TestCase):
         run.app.setQuitOnLastWindowClosed.assert_called_once_with(False)
         run.app.exec.assert_called_once()
 
-    def test_without_a_tray_the_background_flag_still_shows_the_window(self):
-        run = self.run_main(['RDF.exe', '--segundo-plano'], tray_available=False)
-        run.window.show.assert_called_once()
+    def test_without_a_tray_yet_the_background_flag_waits_for_it(self):
+        with mock.patch.object(entry, 'wait_for_tray') as wait:
+            run = self.run_main(['RDF.exe', '--segundo-plano'], tray_available=False)
+        run.window.show.assert_not_called()  # ainda não: no login a bandeja pode demorar a aparecer
         run.tray_class.assert_not_called()
+        wait.assert_called_once_with(run.window)
+
+    def wait_for_tray(self, appears_after):
+        from PySide6.QtCore import QObject
+        from rdf.qt.__main__ import create_app
+
+        app = create_app([])
+
+        class Window(QObject):
+            def __init__(self):
+                super().__init__()
+                self.tray = None
+                self.show = mock.Mock()
+
+            def attach_tray(self, tray):
+                self.tray = tray
+
+        window = Window()
+        checks = []
+
+        def available():
+            checks.append(1)
+            return appears_after is not None and len(checks) > appears_after
+
+        with (
+            mock.patch.object(entry.TrayController, 'available', side_effect=available),
+            mock.patch.object(entry, 'TrayController', wraps=entry.TrayController) as tray_class,
+        ):
+            tray_class.available = available
+            tray_class.side_effect = lambda win: 'bandeja'
+            entry.wait_for_tray(window, seconds=5, interval_ms=5)
+            deadline = time.monotonic() + 3
+            while window.tray is None and not window.show.called and time.monotonic() < deadline:
+                app.processEvents()
+                time.sleep(0.005)
+        return window
+
+    def test_a_tray_that_appears_after_login_keeps_rdf_hidden_in_it(self):
+        window = self.wait_for_tray(appears_after=2)
+        self.assertEqual(window.tray, 'bandeja')
+        window.show.assert_not_called()
+
+    def test_if_the_tray_never_appears_the_window_is_shown(self):
+        window = self.wait_for_tray(appears_after=None)
+        self.assertIsNone(window.tray)
+        window.show.assert_called_once()
 
     def test_a_normal_start_shows_the_window(self):
         run = self.run_main(['RDF.exe'])

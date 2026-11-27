@@ -14,6 +14,7 @@ import fitz
 from PIL import Image
 
 from rdf.core.batch import CATEGORY_LABELS, READY_STATUSES, normalize_status, output_extension
+from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.core.naming import safe_filename
 
 LOGGER = logging.getLogger('rdf')
@@ -70,7 +71,7 @@ def planned_export_paths(source, target, output_format):
     if fmt == 'PDF':
         return [target]
     extension = output_extension(fmt)
-    with fitz.open(source) as doc:
+    with FITZ_LOCK, fitz.open(source) as doc:
         total = len(doc)
     if total <= 1:
         return [target.with_suffix('.' + extension.upper())]
@@ -93,13 +94,15 @@ def export_source(source, target, output_format):
     pil_format = 'JPEG' if fmt in {'JPEG', 'JPG'} else fmt
     created = []
     try:
-        with fitz.open(source) as doc:
+        with FITZ_LOCK, fitz.open(source) as doc:
             for page, destination in zip(doc, destinations):
                 pix = page.get_pixmap(matrix=fitz.Matrix(2.2, 2.2), alpha=False)
                 image = Image.frombytes('RGB', [pix.width, pix.height], pix.samples)
                 options = {'quality': 92, 'optimize': True} if pil_format == 'JPEG' else {}
-                image.save(destination, pil_format, **options)
-                created.append(destination)
+                # 'xb': como no PDF, nunca sobrescreve um arquivo que tenha aparecido depois da conferência
+                with open(destination, 'xb') as handle:
+                    created.append(destination)
+                    image.save(handle, pil_format, **options)
         return created
     except Exception:
         for destination in created:
@@ -130,7 +133,8 @@ def export_batch(batch, out_dir, output_format=None, progress=None):
         while True:
             target = destination / f'{candidate}.{extension}'
             planned = planned_export_paths(path, target, fmt)
-            keys = {str(p.relative_to(out)).lower() for p in planned}
+            # Uma chave por arquivo planejado, na mesma ordem: cada destino é conferido no lote e no disco.
+            keys = [str(p.relative_to(out)).lower() for p in planned]
             if all(key not in used and not p.exists() for key, p in zip(keys, planned)):
                 break
             candidate = f'{base} ({number})'
