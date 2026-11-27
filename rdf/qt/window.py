@@ -1,5 +1,6 @@
 """Janela principal: tela inicial, uma tela por ferramenta, botão Voltar e atalhos."""
 
+import importlib
 import time
 
 from PySide6.QtCore import QByteArray, Qt, QTimer
@@ -19,17 +20,26 @@ from rdf.core.config import resource_path
 from rdf.pdftools.registry import TOOLS_BY_ID
 from rdf.qt import app_dialogs, theme
 from rdf.qt.home import HomePage
-from rdf.qt.merge_page import MergePage
-from rdf.qt.metadata_page import MetadataPage
-from rdf.qt.renamer import RenamerPage
-from rdf.qt.tool_page import ToolPage
 
 APP_TITLE = f'RDF - Ferramentas de PDF v{APP_VERSION}'
 PREFERRED_SIZE = (1500, 940)
 MINIMUM_SIZE = (780, 520)
-CUSTOM_PAGES = {'merge': MergePage, 'metadata': MetadataPage}  # ferramentas com tela própria derivada da padrão
+# Tela de cada ferramenta: (módulo, classe). Cada tela só é importada na primeira vez que abre, então a janela aparece
+# sem carregar o PyMuPDF, o OpenCV e o Tesseract (que o __main__ pré-carrega em segundo plano logo depois).
+CUSTOM_PAGES = {  # ferramentas com tela própria derivada da padrão
+    'merge': ('rdf.qt.merge_page', 'MergePage'),
+    'metadata': ('rdf.qt.metadata_page', 'MetadataPage'),
+}
+RENAMER_PAGE = ('rdf.qt.renamer', 'RenamerPage')
+DEFAULT_PAGE = ('rdf.qt.tool_page', 'ToolPage')
 INCOMING_DELAY_MS = 600  # o Explorer abre o RDF uma vez por arquivo: espera os outros chegarem antes de abrir a tela
 CANCEL_WAIT_SECONDS = 20  # quanto esperar a tarefa parar quando o usuário cancela para sair
+
+
+def page_class(tool):
+    """A classe da tela da ferramenta (importa o módulo dela na primeira vez)."""
+    module, name = RENAMER_PAGE if tool.special else CUSTOM_PAGES.get(tool.id, DEFAULT_PAGE)
+    return getattr(importlib.import_module(module), name)
 
 
 class MainWindow(QMainWindow):
@@ -151,7 +161,8 @@ class MainWindow(QMainWindow):
         tool = TOOLS_BY_ID[tool_id]
         page = self.pages.get(tool_id)
         if page is None:
-            page = RenamerPage() if tool.special else CUSTOM_PAGES.get(tool_id, ToolPage)(tool)
+            page_type = page_class(tool)
+            page = page_type() if tool.special else page_type(tool)
             page.backRequested.connect(self.request_home)
             self.pages[tool_id] = page
             self.stack.addWidget(page)

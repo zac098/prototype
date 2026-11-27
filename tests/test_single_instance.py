@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import unittest
 from pathlib import Path
@@ -129,6 +130,48 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.finish(self.send_from_other_process(['C:/x.pdf'])), [0])
         self.wait_for(2)
         self.assertEqual(self.received[-1], ['C:/x.pdf'])
+
+    def test_many_requests_in_a_row_never_crash_the_window(self):
+        """Regressão: o servidor guardava o objeto Python de cada conexão (num lambda), já apagada pelo Qt. Quando a
+        conexão seguinte nascia no mesmo endereço de memória, recebia esse objeto velho e o RDF fechava sozinho.
+        Roda num processo à parte: se ele cair, o teste falha em vez de derrubar a suíte."""
+        code = textwrap.dedent(
+            f"""
+            import gc, json, os, sys, time
+            os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+            sys.path.insert(0, {str(_source.ROOT)!r})
+            from PySide6.QtNetwork import QLocalSocket
+            from rdf.qt.__main__ import create_app
+            from rdf.qt.single_instance import InstanceServer
+            app = create_app([])
+            received = []
+            for round_ in range(2):
+                name = {self.name!r} + f'-seguidos-{{round_}}'
+                server = InstanceServer(name)
+                assert server.listen()
+                server.filesReceived.connect(received.append)
+                for number in range(30):
+                    before = len(received)
+                    socket = QLocalSocket()
+                    socket.connectToServer(name)
+                    assert socket.waitForConnected(2000)
+                    socket.write(json.dumps({{'files': [f'C:/{{round_}}-{{number}}.pdf']}}).encode())
+                    socket.waitForBytesWritten(2000)
+                    socket.disconnectFromServer()
+                    deadline = time.monotonic() + 5
+                    while len(received) == before and time.monotonic() < deadline:
+                        app.processEvents()
+                        time.sleep(0.001)
+                    del socket
+                    if number % 7 == 0:
+                        gc.collect()
+                server.close()
+            print(len(received))
+            """
+        )
+        result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, timeout=180)
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        self.assertEqual(result.stdout.strip(), '60')
 
     def test_sending_with_nobody_listening_reports_failure(self):
         self.assertFalse(send_to_running(['C:/a.pdf'], f'{self.name}-ninguem', timeout_ms=200))

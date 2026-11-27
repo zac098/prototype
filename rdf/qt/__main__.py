@@ -1,6 +1,9 @@
 """Abre o RDF no novo visual (Qt): python -m rdf.qt"""
 
+import importlib
+import logging
 import sys
+import threading
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
@@ -29,6 +32,29 @@ def create_app(argv=None):
 
 
 TRAY_WAIT_SECONDS = 45  # no login, a área de notificação do Windows pode demorar a aparecer
+LOGGER = logging.getLogger('rdf')
+
+# O que as ferramentas usam e a tela inicial não: carregado em segundo plano logo depois que a janela aparece, para a
+# primeira ferramenta abrir sem esperar. Só módulos sem Qt (as telas continuam sendo criadas no fio principal).
+PRELOAD_MODULES = ('fitz', 'PIL.Image', 'numpy', 'cv2', 'pytesseract', 'rdf.pdftools.sources', 'rdf.core.ocr')
+PRELOAD_DELAY_MS = 800  # depois da primeira pintura da janela
+PRELOAD_DELAY_BACKGROUND_MS = 15000  # no início automático: espera o Windows terminar de abrir os outros programas
+
+
+def preload_in_background(modules=PRELOAD_MODULES):
+    """Importa os módulos pesados numa thread à parte. Um que falhar aqui falha de novo, com a mensagem certa, quando
+    a ferramenta for usada; por isso o erro só vai para o log."""
+
+    def load():
+        for name in modules:
+            try:
+                importlib.import_module(name)
+            except Exception:
+                LOGGER.warning('Pré-carregamento de %s falhou', name, exc_info=True)
+
+    thread = threading.Thread(target=load, name='rdf-preload', daemon=True)
+    thread.start()
+    return thread
 
 
 def wait_for_tray(window, seconds=TRAY_WAIT_SECONDS, interval_ms=1000):
@@ -77,6 +103,7 @@ def main(argv=None):
         wait_for_tray(window)
     if files:
         window.receive_print_files(files)
+    QTimer.singleShot(PRELOAD_DELAY_BACKGROUND_MS if background else PRELOAD_DELAY_MS, preload_in_background)
     return app.exec()
 
 

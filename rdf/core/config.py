@@ -14,8 +14,6 @@ import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-import pytesseract
-
 APP_DATA_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "RDF"
 LOG_DIR = APP_DATA_DIR / "logs"
 LOG_FILE_NAME = "renomeador.log"
@@ -166,6 +164,8 @@ def configure_tesseract(base_dir):
     os.environ.setdefault('OMP_THREAD_LIMIT', OMP_THREADS)
     for exe in tesseract_candidates(base_dir):
         if exe and os.path.isfile(exe):
+            import pytesseract  # aqui dentro: só quem procura o Tesseract carrega o pytesseract (e o numpy)
+
             pytesseract.pytesseract.tesseract_cmd = exe
             tessdata = os.path.join(os.path.dirname(exe), 'tessdata')
             if os.path.isdir(tessdata):
