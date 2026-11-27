@@ -42,7 +42,6 @@ TOOL_ICONS = {
     'metadata': 'E946',
     'pdf-to-text': 'E8A5',
     'grayscale': 'E790',
-    'n-up': 'E80A',
     'fit-paper': 'E740',
 }
 
@@ -179,10 +178,6 @@ def _run_grayscale(source, dest, o, progress):
     return ops.grayscale_pdf(source, dest, progress)
 
 
-def _run_n_up(source, dest, o, progress):
-    return ops.n_up_pdf(source, dest, o['layout'], o['paper'], o['border'], progress)
-
-
 def _run_fit_paper(source, dest, o, progress):
     return ops.fit_to_paper(source, dest, o['paper'], progress)
 
@@ -293,22 +288,6 @@ TOOLS = (
                 help='Ex.: 3, 1, 2, 4-6. Páginas que ficarem de fora são descartadas.',
                 visible_if=('mode', 'Ordem personalizada'),
             ),
-        ),
-    ),
-    _tool(
-        'n-up',
-        'Várias páginas por folha',
-        'Imprima 2, 4, 6 ou 9 páginas em cada folha e economize papel.',
-        'Organizar',
-        '⊞',
-        _run_n_up,
-        suffix='_por_folha',
-        action='Montar folhas',
-        keywords='nup n-up economizar papel imprimir duas quatro paginas folha livreto',
-        options=(
-            Option('layout', 'Páginas em cada folha', 'choice', '2 por folha', tuple(ops.SHEET_LAYOUTS)),
-            Option('paper', 'Papel', 'choice', 'A4', tuple(ops.PAPER_SIZES)),
-            Option('border', 'Desenhar uma borda fina em cada página', 'bool', False),
         ),
     ),
     _tool(
@@ -635,7 +614,7 @@ TOOLS = (
 )
 
 TOOLS_BY_ID = {tool.id: tool for tool in TOOLS}
-NEW_TOOLS = frozenset({'redact', 'metadata', 'pdf-to-text', 'grayscale', 'n-up', 'fit-paper'})  # selo "Novo"
+NEW_TOOLS = frozenset({'redact', 'metadata', 'pdf-to-text', 'grayscale', 'fit-paper'})  # selo "Novo"
 
 
 def fold(text):

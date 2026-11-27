@@ -2,7 +2,8 @@
 
 "Imprimir..." junta a lista (na ordem) em um documento só e abre a janela de impressão do Windows: lá se escolhe a
 impressora, o papel, as cópias, as páginas, a cor e a frente e verso. Com um único arquivo na lista, ele é impresso
-sozinho.
+sozinho. Nada é salvo: o PDF juntado fica numa pasta temporária só enquanto a impressão é preparada e é apagado logo
+depois (impresso, cancelado ou com erro). Para guardar o PDF, o botão é o "Unir PDF".
 """
 
 import shutil
@@ -12,7 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QLabel, QPushButton
 
 from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import ops, printing
@@ -24,14 +25,28 @@ class MergePage(ToolPage):
     # ---- botão Imprimir ------------------------------------------------------------------------
     def build_action_extras(self):
         self.print_button = QPushButton('Imprimir…')
+        self.print_button.setProperty('variant', 'success')
+        self.print_button.setMinimumHeight(42)
         self.print_button.setToolTip(
-            'Abre a janela de impressão do Windows com os arquivos da lista, na ordem (Ctrl+P). Não precisa unir antes.'
+            'Junta os arquivos da lista, na ordem, e abre a janela de impressão do Windows (Ctrl+P). '
+            'Não salva nenhum arquivo.'
         )
         self.print_button.clicked.connect(self.print_files)
         self.print_button.setEnabled(False)
         shortcut = QShortcut(QKeySequence('Ctrl+P'), self, activated=self.print_files)
         shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        return [self.print_button]
+        self.print_hint = QLabel(
+            '"Unir PDF" salva o PDF juntado onde você escolher. "Imprimir" junta só para imprimir: nada fica salvo.'
+        )
+        self.print_hint.setObjectName('hint')
+        self.print_hint.setWordWrap(True)
+        return [self.print_button, self.print_hint]
+
+    def empty_options_text(self):
+        return (
+            'Adicione os arquivos e ponha na ordem certa. Depois, "Unir PDF" para salvar um PDF só, ou "Imprimir" '
+            'para mandar tudo direto para a impressora, sem salvar.'
+        )
 
     def update_print_button(self):
         self.print_button.setEnabled(bool(self.files) and not self.running)
@@ -82,7 +97,7 @@ class MergePage(ToolPage):
             if len(pdfs) == 1:
                 ops.open_pdf(pdfs[0]).close()  # protegido por senha ou vazio: erro com mensagem pronta
                 return pdfs[0]
-            folder = self.cache.folder / 'impressao'
+            folder = self.print_folder
             shutil.rmtree(folder, ignore_errors=True)
             joined = folder / 'juntados.pdf'
             ops.merge_pdfs(pdfs, joined)
@@ -111,8 +126,17 @@ class MergePage(ToolPage):
         try:
             return self._print(list(self.files))
         finally:
+            self.discard_print_copy()
             self.running = False
             self.update_print_button()
+
+    @property
+    def print_folder(self):
+        return self.cache.folder / 'impressao'
+
+    def discard_print_copy(self):
+        """Apaga o PDF juntado para a impressão: imprimir não salva nada (as páginas já estão na fila da impressora)."""
+        shutil.rmtree(self.print_folder, ignore_errors=True)
 
     def _print(self, files):
         try:

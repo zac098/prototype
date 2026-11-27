@@ -1,4 +1,4 @@
-"""Ferramentas novas da 4.0: tarjar, metadados, PDF para texto, escala de cinza, várias por folha e tamanho do papel.
+"""Ferramentas novas da 4.0: tarjar, metadados, PDF para texto, escala de cinza e tamanho do papel.
 
 Todos os documentos são fictícios e gerados pelo próprio teste.
 """
@@ -191,35 +191,6 @@ class GrayscaleTests(ToolTestCase):
 
 
 class SheetTests(ToolTestCase):
-    def test_two_portrait_pages_fit_side_by_side_on_a_landscape_sheet(self):
-        source = make_pdf(self.tmp / 'n.pdf', pages=5)
-        dest = self.tmp / 'n2.pdf'
-        result = ops.n_up_pdf(source, dest, '2 por folha', 'A4')
-        with fitz.open(dest) as document:
-            self.assertEqual(document.page_count, 3)
-            sheet = document[0].rect
-            self.assertGreater(sheet.width, sheet.height)
-            text = document[0].get_text()
-        self.assertIn('pagina 1', text)
-        self.assertIn('pagina 2', text)
-        self.assertIn('5 páginas em 3 folhas', result.message)
-
-    def test_four_per_sheet_keeps_a_portrait_sheet(self):
-        source = make_pdf(self.tmp / 'n.pdf', pages=8)
-        dest = self.tmp / 'n4.pdf'
-        ops.n_up_pdf(source, dest, '4 por folha', 'Carta', border=True)
-        with fitz.open(dest) as document:
-            self.assertEqual(document.page_count, 2)
-            self.assertEqual((round(document[0].rect.width), round(document[0].rect.height)), (612, 792))
-
-    def test_landscape_pages_stack_on_a_portrait_sheet(self):
-        source = make_pdf(self.tmp / 'deitada.pdf', pages=2, size=(842, 595))
-        dest = self.tmp / 'n.pdf'
-        ops.n_up_pdf(source, dest, '2 por folha', 'A4')
-        with fitz.open(dest) as document:
-            self.assertEqual(document.page_count, 1)
-            self.assertLess(document[0].rect.width, document[0].rect.height)
-
     def test_every_page_ends_up_on_the_chosen_paper_keeping_orientation(self):
         source = self.tmp / 'mistura.pdf'
         document = fitz.open()

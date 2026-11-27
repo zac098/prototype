@@ -1,5 +1,9 @@
 # Histórico de alterações
 
+## 4.0.1
+- Removida a ferramenta "Várias páginas por folha": era uma ferramenta de impressão, e imprimir fica no "Unir PDF".
+- "Unir PDF": o botão **Imprimir…** fica em destaque, logo abaixo de "Unir PDF". Ele junta a lista na ordem e abre a janela de impressão do Windows, sem salvar nada: o PDF juntado existe só enquanto a impressão é preparada e é apagado logo depois (impresso, cancelado ou com erro). Para guardar o PDF, use "Unir PDF".
+
 ## 4.0.0 - Visual novo, tema escuro e seis ferramentas novas
 
 ### Visual e uso

@@ -199,6 +199,47 @@ class MergePrintTests(unittest.TestCase):
         self.assertEqual(printer.docName(), 'RDF - 2 arquivos')
         dialog.setMinMax.assert_called_once_with(1, 3)
 
+    def files_left_by_printing(self):
+        """Tudo o que ficou no disco depois de imprimir, fora dos arquivos do teste e da saída da impressora falsa."""
+        return sorted(p.name for p in self.page.cache.folder.rglob('*.pdf') if 'impressao' in p.parts)
+
+    def test_printing_saves_nothing_the_joined_pdf_is_deleted_after(self):
+        originals = [make_pdf(self.tmp / 'a.pdf'), make_pdf(self.tmp / 'b.pdf', pages=2)]
+        self.add(*originals)
+        seen = {}
+
+        def dialog(printer):
+            seen['during'] = self.files_left_by_printing()  # existe só enquanto a janela de impressão está aberta
+            return mock.Mock(exec=mock.Mock(return_value=1))
+
+        with (
+            mock.patch.object(self.page, 'make_printer', side_effect=self.printer_to_file),
+            mock.patch.object(self.page, 'make_print_dialog', side_effect=dialog),
+        ):
+            self.page.print_files()
+        self.assertEqual(seen['during'], ['juntados.pdf'])
+        self.assertEqual(self.files_left_by_printing(), [])
+        self.assertFalse(self.page.print_folder.exists())
+        self.assertEqual(sorted(p.name for p in self.tmp.glob('*.pdf')), ['a.pdf', 'b.pdf', 'impresso.pdf'])
+
+    def test_cancelling_or_failing_also_deletes_the_joined_pdf(self):
+        self.add(make_pdf(self.tmp / 'a.pdf'), make_pdf(self.tmp / 'b.pdf'))
+        self.print_it(accept=False)
+        self.assertFalse(self.page.print_folder.exists())
+        with mock.patch.object(printing, 'print_document', side_effect=ops.PdfToolError('A impressora não aceitou')):
+            self.print_it()
+        self.assertFalse(self.page.print_folder.exists())
+
+    def test_a_single_original_file_is_never_deleted_by_printing(self):
+        original = make_pdf(self.tmp / 'unico.pdf')
+        self.add(original)
+        self.print_it()
+        self.assertTrue(Path(original).exists())
+
+    def test_the_print_button_says_it_saves_nothing(self):
+        self.assertIn('nada fica salvo', self.page.print_hint.text())
+        self.assertIn('Não salva', self.page.print_button.toolTip())
+
     def test_the_document_name_is_the_file_name_when_there_is_one_file(self):
         self.add(make_pdf(self.tmp / 'Extrato.pdf'))
         self.print_it()

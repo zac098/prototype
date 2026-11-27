@@ -680,57 +680,11 @@ def grayscale_pdf(source, dest, progress=_noop):
 
 
 PAPER_SIZES = {'A4': (595.0, 842.0), 'Carta': (612.0, 792.0), 'Ofício': (612.0, 1008.0), 'A3': (842.0, 1191.0)}
-SHEET_LAYOUTS = {'2 por folha': (2, 1), '4 por folha': (2, 2), '6 por folha': (3, 2), '9 por folha': (3, 3)}
 
 
 def _sheet_size(paper, landscape):
     width, height = PAPER_SIZES.get(paper, PAPER_SIZES['A4'])
     return (height, width) if landscape else (width, height)
-
-
-def n_up_pdf(source, dest, layout='2 por folha', paper='A4', border=False, progress=_noop):
-    """Várias páginas em cada folha (economiza papel ao imprimir). A ordem é da esquerda para a direita, de cima para
-    baixo; cada página mantém a proporção e fica centrada no seu espaço."""
-    columns, rows = SHEET_LAYOUTS.get(layout, SHEET_LAYOUTS['2 por folha'])
-    per_sheet = columns * rows
-    output = fitz.open()
-    try:
-        with open_pdf(source) as document:
-            total = document.page_count
-            first = document[0].rect
-            portrait_pages = first.height >= first.width
-            # 2 e 6 por folha ficam melhores deitados (páginas em pé lado a lado); 4 e 9, em pé.
-            landscape = (columns > rows) == portrait_pages
-            sheet_w, sheet_h = _sheet_size(paper, landscape)
-            if not landscape and columns > rows:
-                columns, rows = rows, columns
-            elif landscape and rows > columns:
-                columns, rows = rows, columns
-            margin, gap = 18.0, 8.0
-            cell_w = (sheet_w - 2 * margin - (columns - 1) * gap) / columns
-            cell_h = (sheet_h - 2 * margin - (rows - 1) * gap) / rows
-            sheet = None
-            for index in range(total):
-                progress(index / total, f'Montando a página {index + 1} de {total}')
-                position = index % per_sheet
-                if position == 0:
-                    sheet = output.new_page(width=sheet_w, height=sheet_h)
-                row, column = divmod(position, columns)
-                cell = fitz.Rect(
-                    margin + column * (cell_w + gap),
-                    margin + row * (cell_h + gap),
-                    margin + column * (cell_w + gap) + cell_w,
-                    margin + row * (cell_h + gap) + cell_h,
-                )
-                sheet.show_pdf_page(cell, document, index, keep_proportion=True)
-                if border:
-                    sheet.draw_rect(cell, color=(0.75, 0.75, 0.75), width=0.6)
-        sheets = output.page_count
-        with atomic_output(dest) as temp:
-            _save(output, temp)
-    finally:
-        output.close()
-    return Result([Path(dest)], f'{total} páginas em {sheets} folha' + ('s.' if sheets != 1 else '.'))
 
 
 def fit_to_paper(source, dest, paper='A4', progress=_noop):

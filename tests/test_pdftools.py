@@ -339,7 +339,7 @@ class RegistryTests(unittest.TestCase):
         self.assertNotIn('print', TOOLS_BY_ID)
         found = [t.id for t in search_tools('imprimir')]
         self.assertEqual(found[0], 'merge')  # imprimir fica em Unir; as outras só ajudam a preparar a impressão
-        self.assertLessEqual(set(found), {'merge', 'n-up', 'grayscale'})
+        self.assertLessEqual(set(found), {'merge', 'grayscale'})
         self.assertIn('imprima', TOOLS_BY_ID['merge'].description)
 
 

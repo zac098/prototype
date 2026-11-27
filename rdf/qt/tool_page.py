@@ -407,7 +407,7 @@ class ToolPage(QWidget):
         for widget in self.build_extra_options():
             form.addWidget(widget)
         if not tool.options:
-            note = QLabel(f'Nenhum ajuste necessário. Adicione {self.kind_label} e clique em "{tool.action}".')
+            note = QLabel(self.empty_options_text())
             note.setObjectName('pageLead')
             note.setWordWrap(True)
             form.addWidget(note)
@@ -461,6 +461,10 @@ class ToolPage(QWidget):
     def build_action_extras(self):
         """Botões que uma tela própria põe logo abaixo do botão de ação (a padrão não tem nenhum)."""
         return []
+
+    def empty_options_text(self):
+        """O aviso no lugar das opções, para as ferramentas que não têm nenhuma."""
+        return f'Nenhum ajuste necessário. Adicione {self.kind_label} e clique em "{self.tool.action}".'
 
     def build_extra_options(self):
         """Campos que só uma tela própria precisa, no topo das opções (a padrão não tem nenhum)."""
