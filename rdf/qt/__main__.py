@@ -5,12 +5,13 @@ import sys
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
+from rdf import APP_VERSION
 from rdf.core import settings
 from rdf.core.autostart import BACKGROUND_FLAG
 from rdf.core.config import SETTINGS_FILE, app_base_dir, init, sweep_stale_data
-from rdf.qt import errors
+from rdf.qt import errors, theme
 from rdf.qt.single_instance import InstanceServer, files_from_args, send_to_running
-from rdf.qt.theme import FONT_FAMILY, build_stylesheet
+from rdf.qt.theme import FONT_FAMILY
 from rdf.qt.tray import TrayController
 from rdf.qt.window import MainWindow
 
@@ -19,8 +20,10 @@ def create_app(argv=None):
     """QApplication com a fonte e o tema do RDF. Usado também pelos testes."""
     app = QApplication.instance() or QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName('RDF')
+    app.setApplicationVersion(APP_VERSION)
+    app.setStyle('Fusion')  # segue a paleta do tema (claro ou escuro) também no que a folha de estilo não cobre
     app.setFont(QFont(FONT_FAMILY, 10))
-    app.setStyleSheet(build_stylesheet())
+    theme.apply(app, settings.current().get('theme'))
     return app
 
 
@@ -39,7 +42,7 @@ def main(argv=None):
             return 0
     init(app_base_dir())  # pastas de dados, log e Tesseract: igual ao app atual
     errors.install()  # daqui em diante, nenhum erro some calado
-    settings.load(SETTINGS_FILE)
+    theme.apply(app, settings.load(SETTINGS_FILE).get('theme'))
     if first:  # só o primeiro processo é dono das pastas temporárias
         sweep_stale_data()
     app.setQuitOnLastWindowClosed(False)  # quem encerra é a janela ao fechar de verdade (ou o "Sair" da bandeja)

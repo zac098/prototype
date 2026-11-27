@@ -3,7 +3,7 @@
 import logging
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
-from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPixmap
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QGraphicsScene, QGraphicsView
 
 from rdf.core.imaging import render_pdf_page
@@ -26,8 +26,7 @@ class PreviewView(QGraphicsView):
         self.setFrameShape(QFrame.NoFrame)
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
-        self.setBackgroundBrush(QBrush(QColor('#e8efef')))
-        self.setStyleSheet('QGraphicsView { border: 1px solid #c7d7d6; border-radius: 8px; }')
+        self.setObjectName('pageView')  # fundo e borda vêm do tema (claro ou escuro)
         self._pixmap_item = None
         self.zoom = 1.0
         self.min_zoom = 1.0

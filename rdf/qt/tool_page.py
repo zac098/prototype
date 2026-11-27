@@ -271,7 +271,7 @@ class ToolPage(QWidget):
         self.preview = QLabel()
         self.preview.setFixedSize(*PREVIEW_SIZE)
         self.preview.setAlignment(Qt.AlignCenter)
-        self.preview.setStyleSheet('QLabel { background: #eef2f5; border: 1px solid #e0e6eb; border-radius: 8px; }')
+        self.preview.setObjectName('previewBox')
         self.preview_caption = QLabel('')
         self.preview_caption.setObjectName('hint')
         self.preview_caption.setAlignment(Qt.AlignCenter)

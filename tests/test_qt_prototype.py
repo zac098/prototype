@@ -82,7 +82,7 @@ class StyleTests(QtTestCase):
         self.assertNotIn('@', css)
         self.assertIn(COLORS['brand'], css)
         icon_paths = [part.split('"')[1] for part in css.split('url(')[1:]]
-        self.assertEqual(len(icon_paths), 2)
+        self.assertEqual(len(icon_paths), 4)  # tique, seta da lista e setas do campo numérico
         for path in icon_paths:
             self.assertTrue(Path(path).is_file(), path)
 

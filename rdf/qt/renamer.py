@@ -40,20 +40,29 @@ from rdf.core import analysis_runner, exporter, inputs
 from rdf.core.batch import FILTERS, Batch, read_session_file, row_from_result, status_tone
 from rdf.core.config import OUTPUT_FORMATS
 from rdf.core.io_files import INPUT_EXTENSIONS
-from rdf.qt import dialogs
+from rdf.qt import dialogs, theme
 from rdf.qt.busy import Responsive
 from rdf.qt.preview import PageLoader, PreviewView
+from rdf.qt.theme import COLORS
 from rdf.qt.widgets import BackButton
 
 LOGGER = logging.getLogger('rdf')
 
 COLUMNS = ('Arquivo original', 'Novo nome', 'Leitura', 'Confiança', 'Status')
-TONES = {  # (cor do texto, fundo) de cada status na tabela
-    'ok': ('#176b3a', None),
-    'approved': ('#075985', None),
-    'review': ('#7a4300', '#fff1cc'),
-    'error': ('#8f1713', '#ffd9d6'),
+TONES = {  # (cor do texto, fundo) de cada status na tabela, como chaves do tema (claro ou escuro)
+    'ok': ('tone_ok', None),
+    'approved': ('tone_approved', None),
+    'review': ('tone_review', 'tone_review_bg'),
+    'error': ('tone_error', 'tone_error_bg'),
 }
+
+
+def tone_colors(tone):
+    """(texto, fundo ou None) do tom no tema em uso."""
+    foreground, background = TONES[tone]
+    return COLORS[foreground], (COLORS[background] if background else None)
+
+
 NARROW_BELOW = 1100  # abaixo desta largura: sem as colunas Leitura/Confiança, botões e prévia mais enxutos
 SHORT_BELOW = 580
 SAVE_DELAY_MS = 400
@@ -113,7 +122,7 @@ def small_button(text, tooltip=None):
 def vertical_line():
     line = QFrame()
     line.setFixedWidth(1)
-    line.setStyleSheet('QFrame { background: #e0e6eb; border: none; }')
+    line.setObjectName('vline')
     return line
 
 
@@ -157,6 +166,7 @@ class RenamerPage(QWidget):
         self.loader = PageLoader(self)
         self.loader.loaded.connect(self.on_preview_loaded)
         self.loader.failed.connect(self.on_preview_failed)
+        theme.manager().changed.connect(self.on_theme_changed)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(36, 22, 36, 16)
@@ -486,13 +496,18 @@ class RenamerPage(QWidget):
         if item is None:
             return
         values = self.batch.row_values(path)
-        foreground, background = TONES[status_tone(values[4])]
+        foreground, background = tone_colors(status_tone(values[4]))
         for column, value in enumerate(values):
             item.setText(column, value)
             item.setForeground(column, QBrush(QColor(foreground)))
             item.setBackground(column, QBrush(QColor(background)) if background else QBrush())
         item.setToolTip(0, str(self.batch.source(path)))
         item.setToolTip(1, values[1])
+
+    def on_theme_changed(self, _name=None):
+        """As cores dos status ficam gravadas em cada linha: pinta de novo com o tema novo."""
+        for path in self.items:
+            self.refresh_item(path)
 
     def refresh_all(self):
         for path in self.items:

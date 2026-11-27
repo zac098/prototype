@@ -110,7 +110,7 @@ class ToolTile(QWidget):
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        fill, ink = (COLORS['brand'], '#ffffff') if self.solid else (COLORS['tile'], COLORS['icon'])
+        fill, ink = (COLORS['brand'], COLORS['on_brand']) if self.solid else (COLORS['tile'], COLORS['icon'])
         paint_tile(painter, QRectF(self.rect()), self.tool, fill, ink)
 
 
@@ -225,7 +225,7 @@ class BackButton(_Animated):
         painter.setPen(QPen(QColor(COLORS['brand']), 2))
         painter.setBrush(mix(COLORS['surface'], COLORS['brand'], level))
         painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
-        ink = mix(COLORS['brand'], '#ffffff', level)
+        ink = mix(COLORS['brand'], COLORS['on_brand'], level)
         pen = QPen(ink, 2.4)
         pen.setCapStyle(Qt.RoundCap)
         pen.setJoinStyle(Qt.RoundJoin)
@@ -289,15 +289,14 @@ class SearchBar(_Animated):
         self._hovered = False
 
         self.edit = QLineEdit(self)
+        self.edit.setObjectName('searchEdit')  # sem borda nem fundo: a pílula é desenhada pelo próprio SearchBar
         self.edit.setPlaceholderText(placeholder)
-        self.edit.setStyleSheet(
-            'QLineEdit, QLineEdit:focus { background: transparent; border: none; padding: 0px; font-size: 11pt; }'
-        )
         self.edit.installEventFilter(self)
         self.edit.setAccessibleName('Buscar ferramenta')
         self.hint = QLabel('Ctrl+F')
         self.hint.setObjectName('hint')
         self.clear_button = QToolButton()
+        self.clear_button.setObjectName('searchClear')
         self.clear_button.setCursor(Qt.PointingHandCursor)
         self.clear_button.setToolTip('Limpar a busca (Esc)')
         self.clear_button.setAccessibleName('Limpar a busca')  # o texto é só um ícone
@@ -307,10 +306,6 @@ class SearchBar(_Animated):
             self.clear_button.setFont(glyph_font(12))
         else:
             self.clear_button.setText('×')
-        self.clear_button.setStyleSheet(
-            f'QToolButton {{ border: none; background: transparent; color: {COLORS["faint"]}; padding: 4px 6px; }}'
-            f'QToolButton:hover {{ color: {COLORS["ink"]}; }}'
-        )
         self.clear_button.hide()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(54, 4, 18, 4)

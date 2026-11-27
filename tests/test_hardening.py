@@ -170,10 +170,45 @@ class AccessibilityTests(unittest.TestCase):
         css = build_stylesheet()
         for selector in ('QPushButton:focus', 'QCheckBox::indicator:focus', 'QTreeWidget:focus'):
             self.assertRegex(css, re.escape(selector) + r'\s*\{[^}]*2px solid')
-        # o anel (marca ou tinta) contra o fundo ao redor: mínimo de 3:1 (WCAG 1.4.11)
-        self.assertGreaterEqual(contrast(COLORS['brand'], COLORS['surface']), 3)
-        self.assertGreaterEqual(contrast(COLORS['brand'], COLORS['brand_soft']), 3)
-        self.assertGreaterEqual(contrast(COLORS['ink'], COLORS['surface']), 3)
+        # o anel (marca ou tinta) contra o fundo ao redor: mínimo de 3:1 (WCAG 1.4.11), nos dois temas
+        from rdf.qt.theme import PALETTES
+
+        for name, colors in PALETTES.items():
+            with self.subTest(tema=name):
+                self.assertGreaterEqual(contrast(colors['brand'], colors['surface']), 3)
+                self.assertGreaterEqual(contrast(colors['brand'], colors['brand_soft']), 3)
+                self.assertGreaterEqual(contrast(colors['ink'], colors['surface']), 3)
+
+    def test_text_is_readable_in_both_themes(self):
+        """Texto comum: 4,5:1 contra o fundo em que aparece (WCAG 1.4.3), no tema claro e no escuro."""
+        from rdf.qt.theme import PALETTES
+
+        pairs = [
+            ('ink', 'surface'),
+            ('ink', 'bg'),
+            ('muted', 'surface'),
+            ('faint', 'surface'),
+            ('faint', 'bg'),
+            ('on_brand', 'brand'),
+            ('on_brand', 'success'),
+            ('selection_ink', 'selection'),
+            ('header_ink', 'header'),
+            ('danger', 'surface'),
+            ('tone_ok', 'surface'),
+            ('tone_approved', 'surface'),
+            ('tone_review', 'tone_review_bg'),
+            ('tone_error', 'tone_error_bg'),
+            ('tone_pending', 'tone_pending_bg'),
+        ]
+        for name, colors in PALETTES.items():
+            for text, background in pairs:
+                with self.subTest(tema=name, texto=text, fundo=background):
+                    self.assertGreaterEqual(contrast(colors[text], colors[background]), 4.5)
+
+    def test_both_themes_define_the_same_colors(self):
+        from rdf.qt.theme import DARK, LIGHT
+
+        self.assertEqual(set(LIGHT), set(DARK))
 
 
 class DeliveryTests(unittest.TestCase):
