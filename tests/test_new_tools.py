@@ -176,7 +176,7 @@ class TextTests(ToolTestCase):
         self.assertEqual(tool.output_ext, 'txt')
         self.assertEqual(jobs.suggested_name(tool, Path('C:/docs/relatorio.pdf')), 'relatorio.txt')
         folder_jobs = jobs.jobs_for_folder(tool, [str(self.tmp / 'a.pdf'), str(self.tmp / 'b.pdf')], self.tmp)
-        self.assertTrue(all(str(dest).endswith('.txt') for _source, dest in folder_jobs))
+        self.assertTrue(all(str(dest).endswith('.txt') for _origin, dest in folder_jobs))
 
 
 class GrayscaleTests(ToolTestCase):
