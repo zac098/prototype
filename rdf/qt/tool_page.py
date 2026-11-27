@@ -675,11 +675,13 @@ class ToolPage(QWidget):
         first = Path(self.files[0])
         if jobs.destination_kind(self.tool, self.files) == 'save-as':
             suggestion = str(first.parent / jobs.suggested_name(self.tool, first))
-            target, _filter = QFileDialog.getSaveFileName(self, 'Salvar como', suggestion, 'Arquivo PDF (*.pdf)')
+            ext = self.tool.output_ext
+            kind = 'Arquivo de texto' if ext == 'txt' else f'Arquivo {ext.upper()}'
+            target, _filter = QFileDialog.getSaveFileName(self, 'Salvar como', suggestion, f'{kind} (*.{ext})')
             if not target:
                 return None
-            if not target.lower().endswith('.pdf'):
-                target += '.pdf'
+            if not target.lower().endswith(f'.{ext}'):
+                target += f'.{ext}'
             return jobs.jobs_for_save_as(self.tool, self.files, target)
         folder = QFileDialog.getExistingDirectory(self, 'Escolha a pasta onde salvar', str(first.parent))
         if not folder:

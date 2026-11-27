@@ -49,7 +49,7 @@ def option_visible(option, current_values):
 
 
 def suggested_name(tool, source):
-    return f'{Path(source).stem}{tool.suffix}.pdf'
+    return f'{Path(source).stem}{tool.suffix}.{getattr(tool, "output_ext", "pdf")}'
 
 
 def destination_kind(tool, files):

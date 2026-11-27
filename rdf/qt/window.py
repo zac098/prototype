@@ -20,13 +20,14 @@ from rdf.pdftools.registry import TOOLS_BY_ID
 from rdf.qt import app_dialogs, theme
 from rdf.qt.home import HomePage
 from rdf.qt.merge_page import MergePage
+from rdf.qt.metadata_page import MetadataPage
 from rdf.qt.renamer import RenamerPage
 from rdf.qt.tool_page import ToolPage
 
 APP_TITLE = f'RDF - Ferramentas de PDF v{APP_VERSION}'
 PREFERRED_SIZE = (1500, 940)
 MINIMUM_SIZE = (780, 520)
-CUSTOM_PAGES = {'merge': MergePage}  # ferramentas com tela própria derivada da padrão
+CUSTOM_PAGES = {'merge': MergePage, 'metadata': MetadataPage}  # ferramentas com tela própria derivada da padrão
 INCOMING_DELAY_MS = 600  # o Explorer abre o RDF uma vez por arquivo: espera os outros chegarem antes de abrir a tela
 CANCEL_WAIT_SECONDS = 20  # quanto esperar a tarefa parar quando o usuário cancela para sair
 

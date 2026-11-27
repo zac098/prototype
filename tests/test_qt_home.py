@@ -217,3 +217,28 @@ class CatalogTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(HAS_QT, 'PySide6 não instalado')
+class MetadataPageTests(HomeTestCase):
+    def test_the_current_information_fills_the_fields(self):
+        import tempfile
+        from pathlib import Path
+
+        import fitz
+
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        source = Path(folder.name) / 'meta.pdf'
+        document = fitz.open()
+        document.new_page()
+        document.set_metadata({'title': 'Título antigo', 'author': 'Autor Fictício', 'creator': 'Editor X'})
+        document.save(source)
+        document.close()
+        page = self.window.open_tool('metadata')
+        page.add_paths([str(source)])
+        self.assertEqual(page.widgets['title'].text(), 'Título antigo')
+        self.assertEqual(page.widgets['author'].text(), 'Autor Fictício')
+        self.assertIn('Editor X', page.info_label.text())
+        page.clear_files()
+        self.assertIn('Adicione', page.info_label.text())

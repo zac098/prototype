@@ -7,6 +7,7 @@ corrompido) viram PdfToolError com mensagem pronta para o usuário.
 import contextlib
 import io
 import os
+import re
 import secrets
 import uuid
 from dataclasses import dataclass, field
@@ -473,6 +474,33 @@ def pdf_to_images(source, out_dir, mode='Páginas como imagens', image_format='J
     return Result(created, f'{len(created)} imagens criadas.')
 
 
+def pdf_to_text(source, dest, layout='Texto corrido', progress=_noop):
+    """Grava o texto do PDF num arquivo .txt (UTF-8), com um separador por página.
+
+    "Manter a disposição" tenta preservar colunas e espaços (bom para tabelas); "Texto corrido" junta o texto na
+    ordem de leitura. PDFs escaneados não têm texto: o erro sugere o OCR antes."""
+    pages = []
+    with open_pdf(source) as document:
+        total = document.page_count
+        for number, page in enumerate(document):
+            progress(number / total, f'Lendo o texto da página {number + 1} de {total}')
+            if layout == 'Manter a disposição':
+                text = page.get_text('text', sort=True, flags=fitz.TEXT_PRESERVE_WHITESPACE)
+            else:
+                text = page.get_text('text', sort=True)
+            pages.append(text.rstrip())
+    if not any(text.strip() for text in pages):
+        raise PdfToolError(
+            f'"{Path(source).name}" não tem texto para extrair (parece escaneado). '
+            'Use antes "OCR - PDF pesquisável" e depois esta ferramenta.'
+        )
+    body = '\n\n'.join(f'===== Página {number} =====\n{text}' for number, text in enumerate(pages, start=1))
+    with atomic_output(dest) as temp:
+        Path(temp).write_text(body + '\n', encoding='utf-8-sig')  # com BOM: o Bloco de Notas acerta os acentos
+    filled = sum(1 for text in pages if text.strip())
+    return Result([Path(dest)], f'Texto de {filled} de {total} páginas salvo em .txt.')
+
+
 # ---- editar --------------------------------------------------------------------------------
 
 ROTATIONS = {'90° para a direita': 90, '180°': 180, '90° para a esquerda': 270}
@@ -606,6 +634,96 @@ def add_watermark(source, dest, text, size=60, opacity=30, angle='Diagonal', col
     return Result([Path(dest)], 'Marca d\'água aplicada em todas as páginas.')
 
 
+def grayscale_pdf(source, dest, progress=_noop):
+    """Converte textos, desenhos e imagens para tons de cinza, mantendo o texto pesquisável (bom para imprimir)."""
+    with edit_pdf(source, dest) as (document, temp):
+        total = document.page_count
+        for number, page in enumerate(document):
+            progress(0.9 * number / total, f'Convertendo a página {number + 1} de {total}')
+            page.recolor(1)
+        progress(0.95, 'Gravando o PDF')
+        _save(document, temp)
+    return Result(
+        [Path(dest)], f'{total} página' + ('s convertidas' if total != 1 else ' convertida') + ' para tons de cinza.'
+    )
+
+
+PAPER_SIZES = {'A4': (595.0, 842.0), 'Carta': (612.0, 792.0), 'Ofício': (612.0, 1008.0), 'A3': (842.0, 1191.0)}
+SHEET_LAYOUTS = {'2 por folha': (2, 1), '4 por folha': (2, 2), '6 por folha': (3, 2), '9 por folha': (3, 3)}
+
+
+def _sheet_size(paper, landscape):
+    width, height = PAPER_SIZES.get(paper, PAPER_SIZES['A4'])
+    return (height, width) if landscape else (width, height)
+
+
+def n_up_pdf(source, dest, layout='2 por folha', paper='A4', border=False, progress=_noop):
+    """Várias páginas em cada folha (economiza papel ao imprimir). A ordem é da esquerda para a direita, de cima para
+    baixo; cada página mantém a proporção e fica centrada no seu espaço."""
+    columns, rows = SHEET_LAYOUTS.get(layout, SHEET_LAYOUTS['2 por folha'])
+    per_sheet = columns * rows
+    output = fitz.open()
+    try:
+        with open_pdf(source) as document:
+            total = document.page_count
+            first = document[0].rect
+            portrait_pages = first.height >= first.width
+            # 2 e 6 por folha ficam melhores deitados (páginas em pé lado a lado); 4 e 9, em pé.
+            landscape = (columns > rows) == portrait_pages
+            sheet_w, sheet_h = _sheet_size(paper, landscape)
+            if not landscape and columns > rows:
+                columns, rows = rows, columns
+            elif landscape and rows > columns:
+                columns, rows = rows, columns
+            margin, gap = 18.0, 8.0
+            cell_w = (sheet_w - 2 * margin - (columns - 1) * gap) / columns
+            cell_h = (sheet_h - 2 * margin - (rows - 1) * gap) / rows
+            sheet = None
+            for index in range(total):
+                progress(index / total, f'Montando a página {index + 1} de {total}')
+                position = index % per_sheet
+                if position == 0:
+                    sheet = output.new_page(width=sheet_w, height=sheet_h)
+                row, column = divmod(position, columns)
+                cell = fitz.Rect(
+                    margin + column * (cell_w + gap),
+                    margin + row * (cell_h + gap),
+                    margin + column * (cell_w + gap) + cell_w,
+                    margin + row * (cell_h + gap) + cell_h,
+                )
+                sheet.show_pdf_page(cell, document, index, keep_proportion=True)
+                if border:
+                    sheet.draw_rect(cell, color=(0.75, 0.75, 0.75), width=0.6)
+        sheets = output.page_count
+        with atomic_output(dest) as temp:
+            _save(output, temp)
+    finally:
+        output.close()
+    return Result([Path(dest)], f'{total} páginas em {sheets} folha' + ('s.' if sheets != 1 else '.'))
+
+
+def fit_to_paper(source, dest, paper='A4', progress=_noop):
+    """Deixa todas as páginas no mesmo tamanho de papel (A4, Carta...), ampliando ou reduzindo o conteúdo sem
+    distorcer. Cada página mantém a sua orientação (em pé ou deitada)."""
+    output = fitz.open()
+    try:
+        with open_pdf(source) as document:
+            total = document.page_count
+            for index, page in enumerate(document):
+                progress(index / total, f'Ajustando a página {index + 1} de {total}')
+                visible = page.rect  # já considera a rotação da página
+                width, height = _sheet_size(paper, visible.width > visible.height)
+                target = output.new_page(width=width, height=height)
+                target.show_pdf_page(target.rect, document, index, keep_proportion=True)
+        with atomic_output(dest) as temp:
+            _save(output, temp)
+    finally:
+        output.close()
+    return Result(
+        [Path(dest)], f'{total} página' + ('s ajustadas' if total != 1 else ' ajustada') + f' ao tamanho {paper}.'
+    )
+
+
 # ---- segurança -----------------------------------------------------------------------------
 
 
@@ -659,3 +777,140 @@ def unlock_pdf(source, dest, password='', progress=_noop):
             document.save(temp, garbage=3, deflate=True, encryption=fitz.PDF_ENCRYPT_NONE)
     message = 'Proteção removida.' if was_protected else 'O PDF não tinha proteção; uma cópia foi salva.'
     return Result([Path(dest)], message)
+
+
+METADATA_FIELDS = (('title', 'Título'), ('author', 'Autor'), ('subject', 'Assunto'), ('keywords', 'Palavras-chave'))
+_PDF_DATE = re.compile(r"^(?:D:)?(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?")
+
+
+def format_pdf_date(value):
+    """Data de PDF ("D:20261127083000-03'00'") como "27/11/2026 08:30"; vazio se não der para ler."""
+    found = _PDF_DATE.match((value or '').strip())
+    if not found:
+        return ''
+    year, month, day, hour, minute, _second = found.groups()
+    if not (month and day):
+        return year
+    text = f'{day}/{month}/{year}'
+    return f'{text} {hour}:{minute or "00"}' if hour else text
+
+
+def read_metadata(path):
+    """As informações do documento (título, autor, programa, datas), sem abrir erro: vazio se não der para ler."""
+    try:
+        with FITZ_LOCK, fitz.open(path) as document:
+            if document.needs_pass:
+                return {}
+            metadata = dict(document.metadata or {})
+            pages = document.page_count
+    except Exception:
+        return {}
+    info = {key: (metadata.get(key) or '').strip() for key in ('title', 'author', 'subject', 'keywords')}
+    info['creator'] = (metadata.get('creator') or '').strip()
+    info['producer'] = (metadata.get('producer') or '').strip()
+    info['created'] = format_pdf_date(metadata.get('creationDate'))
+    info['modified'] = format_pdf_date(metadata.get('modDate'))
+    info['pages'] = pages
+    return info
+
+
+def edit_metadata(source, dest, mode='Editar', title='', author='', subject='', keywords='', progress=_noop):
+    """Edita ou remove as informações do documento (título, autor, programa que criou, datas...).
+
+    "Editar": os campos preenchidos substituem os atuais; os deixados em branco ficam como estão.
+    "Remover": apaga as informações, os metadados XMP, scripts, anexos e miniaturas; o conteúdo das páginas (inclusive
+    o texto invisível de um PDF com OCR) não muda."""
+    with edit_pdf(source, dest) as (document, temp):
+        if mode == 'Remover':
+            document.scrub(
+                attached_files=True,
+                clean_pages=False,
+                embedded_files=True,
+                hidden_text=False,
+                javascript=True,
+                metadata=True,
+                redactions=False,
+                remove_links=False,
+                reset_fields=False,
+                reset_responses=False,
+                thumbnails=True,
+                xml_metadata=True,
+            )
+            document.set_metadata({})
+            message = 'Informações do documento, metadados XMP, scripts e anexos removidos.'
+        else:
+            values = {'title': title, 'author': author, 'subject': subject, 'keywords': keywords}
+            changes = {key: str(value).strip() for key, value in values.items() if str(value or '').strip()}
+            if not changes:
+                raise PdfToolError('Preencha pelo menos um campo para alterar (os vazios ficam como estão).')
+            metadata = dict(document.metadata or {})
+            metadata.update(changes)
+            document.set_metadata(metadata)
+            names = ', '.join(label.lower() for key, label in METADATA_FIELDS if key in changes)
+            message = f'Informações atualizadas: {names}.'
+        _save(document, temp)
+    return Result([Path(dest)], message)
+
+
+REDACTION_PATTERNS = {
+    'cpf': ('CPF', r'(?<![\d.])\d{3}\.?\d{3}\.?\d{3}-?\d{2}(?![\d])'),
+    'cnpj': ('CNPJ', r'(?<![\d.])\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}(?![\d])'),
+    'email': ('e-mail', r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+'),
+    'phone': ('telefone', r'(?<!\d)(?:\(\d{2}\)\s?|\d{2}\s)?9?\d{4}-\d{4}(?!\d)'),
+}
+
+
+def _redaction_terms(text, terms, patterns):
+    """Os trechos do texto da página que devem ser tarjados: os termos digitados e o que casa com os padrões."""
+    found = set()
+    flat = ' '.join(text.split())
+    for term in terms:
+        if term and term.casefold() in flat.casefold():
+            found.add(term)
+    for key in patterns:
+        found.update(match.group(0) for match in re.finditer(REDACTION_PATTERNS[key][1], flat))
+    return found
+
+
+def redact_pdf(source, dest, terms='', cpf=True, cnpj=False, email=False, phone=False, progress=_noop):
+    """Tarja (apaga de verdade) textos do PDF: termos digitados e, se marcados, CPF, CNPJ, e-mail e telefone.
+
+    O texto sob a tarja é removido do arquivo (não só coberto) e os pixels de imagens embaixo dela viram preto, então
+    não dá para copiar nem recuperar. Precisa de texto pesquisável: num PDF escaneado, use o OCR antes."""
+    wanted = [part.strip() for part in re.split(r'[,;\n]+', terms or '') if part.strip()]
+    patterns = [key for key, on in (('cpf', cpf), ('cnpj', cnpj), ('email', email), ('phone', phone)) if on]
+    if not wanted and not patterns:
+        raise PdfToolError('Digite o que tarjar ou marque pelo menos um tipo de dado (CPF, e-mail...).')
+    count = pages_hit = 0
+    has_text = False
+    with edit_pdf(source, dest) as (document, temp):
+        total = document.page_count
+        for number, page in enumerate(document):
+            progress(0.9 * number / total, f'Procurando na página {number + 1} de {total}')
+            text = page.get_text('text')
+            if text.strip():
+                has_text = True
+            areas = []
+            for snippet in _redaction_terms(text, wanted, patterns):
+                areas.extend(page.search_for(snippet))
+            if not areas:
+                continue
+            for area in areas:
+                page.add_redact_annot(area, fill=(0, 0, 0))
+            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
+            count += len(areas)
+            pages_hit += 1
+        if not has_text:
+            raise PdfToolError(
+                f'"{Path(source).name}" não tem texto pesquisável (parece escaneado). '
+                'Use antes "OCR - PDF pesquisável" e depois tarje o resultado.'
+            )
+        if not count:
+            raise PdfToolError('Nada encontrado para tarjar: nenhum dos termos ou tipos de dado aparece no PDF.')
+        progress(0.95, 'Gravando o PDF')
+        document.save(temp, garbage=4, deflate=True, clean=True)  # garbage=4 descarta de vez o que foi apagado
+    noun = 'trecho tarjado' if count == 1 else 'trechos tarjados'
+    where = 'página' if pages_hit == 1 else 'páginas'
+    return Result(
+        [Path(dest)], f'{count} {noun} em {pages_hit} {where}. O conteúdo sob a tarja foi apagado do arquivo.'
+    )

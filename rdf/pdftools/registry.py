@@ -38,6 +38,12 @@ TOOL_ICONS = {
     'watermark': 'E8D2',
     'protect': 'E72E',
     'unlock': 'E785',
+    'redact': 'ED1A',
+    'metadata': 'E946',
+    'pdf-to-text': 'E8A5',
+    'grayscale': 'E790',
+    'n-up': 'E80A',
+    'fit-paper': 'E740',
 }
 
 
@@ -72,6 +78,7 @@ class Tool:
     special: bool = False  # abre uma tela própria (Renomear folhas de ponto), sem o formulário padrão
     ordered: bool = False  # a ordem da lista importa (mostra as setas para subir e descer)
     any_format: bool = True  # aceita também imagens, texto, HTML e Office (convertidos para PDF); False: só PDF
+    output_ext: str = 'pdf'  # extensão do que a ferramenta grava (pdf, ou txt em "PDF para texto")
 
     @property
     def icon(self):
@@ -149,6 +156,31 @@ def _run_protect(source, dest, o, progress):
 
 def _run_unlock(source, dest, o, progress):
     return ops.unlock_pdf(source, dest, o['password'], progress)
+
+
+def _run_redact(source, dest, o, progress):
+    return ops.redact_pdf(source, dest, o['terms'], o['cpf'], o['cnpj'], o['email'], o['phone'], progress)
+
+
+def _run_metadata(source, dest, o, progress):
+    mode = 'Remover' if o['mode'].startswith('Remover') else 'Editar'
+    return ops.edit_metadata(source, dest, mode, o['title'], o['author'], o['subject'], o['keywords'], progress)
+
+
+def _run_pdf_to_text(source, dest, o, progress):
+    return ops.pdf_to_text(source, dest, o['layout'], progress)
+
+
+def _run_grayscale(source, dest, o, progress):
+    return ops.grayscale_pdf(source, dest, progress)
+
+
+def _run_n_up(source, dest, o, progress):
+    return ops.n_up_pdf(source, dest, o['layout'], o['paper'], o['border'], progress)
+
+
+def _run_fit_paper(source, dest, o, progress):
+    return ops.fit_to_paper(source, dest, o['paper'], progress)
 
 
 PAGES_HELP = 'Exemplos: 1-3, 5, 8-  (vírgula separa; "8-" vai até a última página)'
@@ -254,6 +286,22 @@ TOOLS = (
                 help='Ex.: 3, 1, 2, 4-6. Páginas que ficarem de fora são descartadas.',
                 visible_if=('mode', 'Ordem personalizada'),
             ),
+        ),
+    ),
+    _tool(
+        'n-up',
+        'Várias páginas por folha',
+        'Imprima 2, 4, 6 ou 9 páginas em cada folha e economize papel.',
+        'Organizar',
+        '⊞',
+        _run_n_up,
+        suffix='_por_folha',
+        action='Montar folhas',
+        keywords='nup n-up economizar papel imprimir duas quatro paginas folha livreto',
+        options=(
+            Option('layout', 'Páginas em cada folha', 'choice', '2 por folha', tuple(ops.SHEET_LAYOUTS)),
+            Option('paper', 'Papel', 'choice', 'A4', tuple(ops.PAPER_SIZES)),
+            Option('border', 'Desenhar uma borda fina em cada página', 'bool', False),
         ),
     ),
     _tool(
@@ -370,6 +418,28 @@ TOOLS = (
         ),
     ),
     _tool(
+        'pdf-to-text',
+        'PDF para texto',
+        'Extraia o texto do PDF para um arquivo .txt que abre em qualquer programa.',
+        'Converter',
+        'TXT',
+        _run_pdf_to_text,
+        suffix='',
+        output_ext='txt',
+        action='Extrair texto',
+        keywords='txt texto extrair copiar converter bloco de notas',
+        options=(
+            Option(
+                'layout',
+                'Formato do texto',
+                'choice',
+                'Texto corrido',
+                ('Texto corrido', 'Manter a disposição'),
+                help='"Manter a disposição" preserva colunas e espaços (bom para tabelas).',
+            ),
+        ),
+    ),
+    _tool(
         'rotate',
         'Girar PDF',
         'Gire todas as páginas ou só algumas.',
@@ -439,6 +509,29 @@ TOOLS = (
         ),
     ),
     _tool(
+        'grayscale',
+        'Escala de cinza',
+        'Converta as cores para tons de cinza, mantendo o texto pesquisável: ideal para imprimir.',
+        'Editar',
+        '◐',
+        _run_grayscale,
+        suffix='_cinza',
+        action='Converter para cinza',
+        keywords='preto e branco cinza grayscale monocromatico imprimir tinta cores',
+    ),
+    _tool(
+        'fit-paper',
+        'Ajustar tamanho do papel',
+        'Deixe todas as páginas em A4 (ou Carta, Ofício, A3), sem distorcer o conteúdo.',
+        'Editar',
+        '⤢',
+        _run_fit_paper,
+        suffix='_ajustado',
+        action='Ajustar páginas',
+        keywords='redimensionar tamanho papel a4 carta oficio escala padronizar',
+        options=(Option('paper', 'Papel', 'choice', 'A4', tuple(ops.PAPER_SIZES)),),
+    ),
+    _tool(
         'protect',
         'Proteger PDF',
         'Coloque uma senha no PDF (criptografia AES de 256 bits).',
@@ -475,10 +568,67 @@ TOOLS = (
         keywords='senha remover desbloquear unlock password',
         options=(Option('password', 'Senha atual (se o PDF pedir)', 'password', ''),),
     ),
+    _tool(
+        'redact',
+        'Tarjar dados (LGPD)',
+        'Apague de verdade CPFs, e-mails, telefones e outros textos antes de compartilhar um PDF.',
+        'Segurança',
+        '▬',
+        _run_redact,
+        suffix='_tarjado',
+        action='Tarjar e salvar',
+        keywords='lgpd tarjar ocultar esconder apagar cpf cnpj email telefone dados pessoais anonimizar redact censurar',
+        options=(
+            Option(
+                'terms',
+                'Textos para tarjar (opcional)',
+                'text',
+                '',
+                help='Separe por vírgula. Ex.: Maria da Silva, 123456. Maiúsculas e minúsculas tanto faz.',
+            ),
+            Option('cpf', 'Tarjar todos os CPFs', 'bool', True),
+            Option('cnpj', 'Tarjar todos os CNPJs', 'bool', False),
+            Option('email', 'Tarjar todos os e-mails', 'bool', False),
+            Option('phone', 'Tarjar todos os telefones', 'bool', False),
+        ),
+    ),
+    _tool(
+        'metadata',
+        'Metadados do PDF',
+        'Veja quem criou o arquivo, edite título e autor ou remova essas informações ocultas.',
+        'Segurança',
+        'i',
+        _run_metadata,
+        suffix='_metadados',
+        multiple=False,
+        action='Salvar PDF',
+        keywords='metadados autor titulo propriedades informacoes privacidade remover limpar lgpd xmp',
+        options=(
+            Option(
+                'mode',
+                'O que fazer',
+                'choice',
+                'Editar informações',
+                ('Editar informações', 'Remover tudo (privacidade)'),
+                help='Remover apaga autor, programa, datas, scripts e anexos. As páginas não mudam.',
+            ),
+            Option('title', 'Título', 'text', '', visible_if=('mode', 'Editar informações')),
+            Option('author', 'Autor', 'text', '', visible_if=('mode', 'Editar informações')),
+            Option('subject', 'Assunto', 'text', '', visible_if=('mode', 'Editar informações')),
+            Option(
+                'keywords',
+                'Palavras-chave',
+                'text',
+                '',
+                help='Campos em branco ficam como estão.',
+                visible_if=('mode', 'Editar informações'),
+            ),
+        ),
+    ),
 )
 
 TOOLS_BY_ID = {tool.id: tool for tool in TOOLS}
-NEW_TOOLS = frozenset()  # ferramentas novas desta versão: a tela inicial mostra o selo "Novo"
+NEW_TOOLS = frozenset({'redact', 'metadata', 'pdf-to-text', 'grayscale', 'n-up', 'fit-paper'})  # selo "Novo"
 
 
 def fold(text):
