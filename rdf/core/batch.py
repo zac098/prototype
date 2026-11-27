@@ -9,6 +9,7 @@ document_type, manual_name, chapa_source, analysis_page... Sem linha, o arquivo 
 
 import json
 import logging
+import unicodedata
 from pathlib import Path
 
 from rdf.core import config
@@ -19,6 +20,7 @@ LOGGER = logging.getLogger('rdf')
 
 READY_STATUSES = {'OK', 'APROVADO', 'CORRIGIDO'}
 BLOCKING_STATUSES = {'ERRO', 'FALHOU', 'NAO RECONHECIDO', 'PENDENTE'}
+ATTENTION_STATUSES = {'REVISAR', 'ERRO', 'FALHOU', 'NAO RECONHECIDO'}  # lidos, mas pedem a conferência de alguém
 FILTERS = ('Todos', 'Prontos', 'Revisar', 'Bloqueados')
 CATEGORY_LABELS = {'Atestados': 'Atestado', 'Declarações': 'Declaração'}
 
@@ -42,6 +44,12 @@ def status_tone(status):
     if normalized in ('ERRO', 'FALHOU', 'NAO RECONHECIDO'):
         return 'error'
     return 'review'
+
+
+def fold(text):
+    """Texto sem acentos e sem diferença de maiúsculas, para a busca no lote ("joao" acha "JOÃO")."""
+    decomposed = unicodedata.normalize('NFKD', text or '')
+    return ''.join(char for char in decomposed if not unicodedata.combining(char)).casefold()
 
 
 def output_extension(output_format=None):
@@ -172,6 +180,7 @@ class Batch:
         self.include_mes = True
         self.output_format = 'PDF'
         self.filter_status = 'Todos'
+        self.text_filter = ''  # busca por nome na tela (não é salva na sessão)
         self.persistence_disabled = False
 
     # -- opções --
@@ -257,8 +266,38 @@ class Batch:
             return is_blocking_status(status)
         return True
 
+    def matches_text(self, path, text=None):
+        """True se o nome original, o novo nome, a matrícula ou o nome lido contêm o texto buscado."""
+        words = fold(self.text_filter if text is None else text).split()
+        if not words:
+            return True
+        row = self.rows.get(path) or {}
+        haystack = fold(
+            ' '.join(
+                str(part or '') for part in (self.display_name(path), row.get('new'), row.get('chapa'), row.get('nome'))
+            )
+        )
+        return all(word in haystack for word in words)
+
     def visible_paths(self, wanted=None):
-        return [path for path in self.files if self.matches_filter(path, wanted)]
+        return [path for path in self.files if self.matches_filter(path, wanted) and self.matches_text(path)]
+
+    def needs_attention(self, path):
+        return normalize_status(self.status(path)) in ATTENTION_STATUSES
+
+    def next_needing_attention(self, after=None, candidates=None):
+        """O próximo arquivo (depois de after, dando a volta no fim) que precisa de conferência; None se nenhum."""
+        order = list(self.files if candidates is None else candidates)
+        if not order:
+            return None
+        start = order.index(after) + 1 if after in order else 0
+        for path in order[start:] + order[:start]:
+            if self.needs_attention(path):
+                return path
+        return None
+
+    def attention_count(self):
+        return sum(1 for path in self.files if self.needs_attention(path))
 
     # -- arquivos --
     def load(self, paths):
