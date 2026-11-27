@@ -38,6 +38,21 @@ computador (PowerShell e COM, em segundo plano, macros desligadas e sem fechar o
 
 Fora do escopo por enquanto: converter PDF para Word, Excel e PowerPoint, assinar, comparar e editar o texto do PDF.
 
+## Baixar e instalar
+
+Na página **Releases** do repositório, baixe o `RDF_Setup_<versão>.exe` da versão mais nova e execute. Ele não pede
+administrador e atualiza a versão anterior mantendo as configurações. O `RDF_portatil_<versão>.exe` roda sem instalar
+(mas sem o "Imprimir com o RDF" no botão direito). O Tesseract já vem dentro dos dois. O `SHA256SUMS.txt` serve para
+conferir que o arquivo baixado é o original.
+
+### Publicar uma versão nova
+
+1. Troque `APP_VERSION` em `rdf/__init__.py` (e acrescente a versão no `docs/CHANGELOG.md`).
+2. Crie a tag com a mesma versão e envie: `git tag v4.0.1` e `git push origin v4.0.1`.
+3. O workflow **Instalador** (`.github/workflows/release.yml`) monta os `.exe` num Windows do GitHub e cria a release,
+   com as notas da versão tiradas do `docs/CHANGELOG.md`. Também dá para rodá-lo à mão em Actions > Instalador
+   (só gera os arquivos, sem release).
+
 ## Requisitos
 
 - Python 3.11 ou superior (o Pillow fixado em `requirements.txt` não instala no 3.10)

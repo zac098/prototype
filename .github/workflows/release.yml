@@ -1,0 +1,134 @@
+name: Instalador
+
+# Gera o RDF.exe (PyInstaller) e o RDF_Setup.exe (Inno Setup) numa máquina Windows, com o Tesseract (por e eng)
+# embutido, como o packaging/build_package.bat faz no computador de quem empacota.
+# - Tag "v4.0.0" (igual à APP_VERSION): cria a release no GitHub com os dois .exe e o SHA-256.
+# - Manual (Actions > Instalador > Run workflow) ou num PR que mexa no empacotamento: só gera os arquivos para baixar.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - 'packaging/**'
+      - 'requirements*.txt'
+      - 'rdf_app.py'
+
+permissions:
+  contents: write
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+
+      - name: Versão
+        shell: pwsh
+        run: |
+          $version = python -c "import rdf; print(rdf.APP_VERSION)"
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "A tag $env:GITHUB_REF_NAME não bate com a versão do app (v$version, em rdf/__init__.py)."
+          }
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+          Write-Host "Versão: $version"
+
+      - name: Tesseract OCR (português e inglês)
+        shell: pwsh
+        run: |
+          choco install tesseract -y --no-progress
+          $dir = Join-Path $env:ProgramFiles 'Tesseract-OCR'
+          if (-not (Test-Path "$dir\tesseract.exe")) { throw "Tesseract não foi instalado em $dir" }
+          foreach ($lang in 'por', 'eng') {
+            $file = "$dir\tessdata\$lang.traineddata"
+            if (-not (Test-Path $file)) {
+              Invoke-WebRequest "https://github.com/tesseract-ocr/tessdata/raw/main/$lang.traineddata" -OutFile $file
+            }
+          }
+          & "$dir\tesseract.exe" --list-langs
+          "TESSERACT_DIR=$dir" >> $env:GITHUB_ENV
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*\ISCC.exe", "$env:ProgramFiles\Inno Setup*\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*\ISCC.exe", "$env:ProgramFiles\Inno Setup*\ISCC.exe" | Select-Object -First 1
+          }
+          "ISCC=$($iscc.FullName)" >> $env:GITHUB_ENV
+          Write-Host "Inno Setup: $($iscc.FullName)"
+
+      - name: Dependências
+        run: python -m pip install -r requirements.txt -r requirements-build.txt
+
+      - name: RDF.exe (PyInstaller)
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name RDF `
+            --exclude-module tkinter --exclude-module tkinterdnd2 `
+            --exclude-module PySide6.QtWebEngineCore --exclude-module PySide6.QtWebEngineWidgets `
+            --exclude-module PySide6.QtQml --exclude-module PySide6.QtQuick --exclude-module PySide6.QtQuickWidgets `
+            --exclude-module PySide6.QtSql --exclude-module PySide6.QtTest `
+            --exclude-module PySide6.QtPdf --exclude-module PySide6.QtPdfWidgets `
+            --collect-all cv2 --collect-all fitz `
+            --add-binary "$env:TESSERACT_DIR;Tesseract-OCR" `
+            --add-data "assets\icone.ico;assets" --icon "assets\icone.ico" rdf_app.py
+          if (-not (Test-Path dist\RDF.exe)) { throw 'O PyInstaller não gerou o dist\RDF.exe' }
+          Write-Host ("RDF.exe: {0:N1} MB" -f ((Get-Item dist\RDF.exe).Length / 1MB))
+
+      - name: RDF_Setup.exe (Inno Setup)
+        shell: pwsh
+        run: |
+          & $env:ISCC "/DMyAppVersion=$env:APP_VERSION" packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'O Inno Setup falhou' }
+          New-Item -ItemType Directory -Force entrega | Out-Null
+          Copy-Item installer_output\RDF_Setup.exe "entrega\RDF_Setup_$env:APP_VERSION.exe"
+          Copy-Item dist\RDF.exe "entrega\RDF_portatil_$env:APP_VERSION.exe"
+          Push-Location entrega
+          Get-ChildItem *.exe | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name
+          } | Set-Content -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+          Pop-Location
+
+      - name: Notas da versão (do docs/CHANGELOG.md)
+        shell: pwsh
+        run: |
+          $lines = Get-Content docs\CHANGELOG.md -Encoding utf8
+          $start = ($lines | Select-String -Pattern "^## $([regex]::Escape($env:APP_VERSION))" | Select-Object -First 1).LineNumber
+          $notes = @()
+          if ($start) {
+            foreach ($line in $lines[$start..($lines.Count - 1)]) {
+              if ($line -match '^## ') { break }
+              $notes += $line
+            }
+          }
+          $intro = @(
+            '**Como instalar:** baixe o `RDF_Setup_' + $env:APP_VERSION + '.exe` abaixo e execute (não pede administrador; atualiza a versão anterior mantendo as configurações).',
+            'O `RDF_portatil_' + $env:APP_VERSION + '.exe` roda sem instalar (sem o menu "Imprimir com o RDF" do botão direito).',
+            ''
+          )
+          ($intro + $notes) | Set-Content -Encoding utf8 notas.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RDF-${{ env.APP_VERSION }}
+          path: entrega/*
+
+      - name: Publicar a release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: RDF ${{ env.APP_VERSION }}
+          body_path: notas.md
+          files: entrega/*
