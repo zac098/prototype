@@ -111,11 +111,15 @@ class RenamerCase(unittest.TestCase):
         page.choose_folder = lambda title='': self.chosen_folder
 
     def close_page(self):
+        from PySide6.QtCore import QEvent
+
         self.page.loader.wait(2000)
         self.page.save_timer.stop()
         self.page.close()
         self.page.deleteLater()
         self.app.processEvents()
+        if self.page.is_finished():  # com uma análise ainda rodando, a tela não pode ser apagada embaixo dela
+            self.app.sendPostedEvents(None, QEvent.DeferredDelete)  # apaga de verdade: janelas velhas pesam nos testes
 
     # ---- apoio ----
     def pump(self, seconds=0.05):

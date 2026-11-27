@@ -39,7 +39,7 @@
 - Nomes de atestados e declarações mantêm os acentos ("MARIA JOSÉ - ATESTADO").
 - O mínimo passa a ser o **Python 3.11** (o Pillow fixado não instala no 3.10, que o projeto dizia aceitar); `Iniciar RDF.bat` e o build deixam de procurar o 3.10.
 - Preferências do usuário em `preferencias.json` (só escolhas de uso, nada dos documentos), gravadas sem nunca ficar pela metade.
-- CI também no Linux com o Python mínimo; regras extras do ruff (bugbear, pyupgrade); a suíte de testes caiu de 145 s para cerca de 80 s mesmo com mais de 100 testes novos.
+- CI também no Linux com o Python mínimo; regras extras do ruff (bugbear, pyupgrade); a suíte de testes caiu de 145 s para cerca de 50 s mesmo com mais de 130 testes novos (as janelas dos testes passam a ser apagadas de verdade e a folha de estilo só é reaplicada quando o tema muda).
 
 
 ## Imprimir passou para "Unir PDF"

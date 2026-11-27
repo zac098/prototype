@@ -66,9 +66,12 @@ class QtTestCase(unittest.TestCase):
         self.addCleanup(patch.stop)
 
     def close_window(self):
+        from PySide6.QtCore import QEvent
+
         self.window.close()
         self.window.deleteLater()
         self.app.processEvents()
+        self.app.sendPostedEvents(None, QEvent.DeferredDelete)  # apaga de verdade: janelas velhas pesam nos testes
 
     def wait_until(self, condition, timeout=10.0):
         deadline = time.monotonic() + timeout

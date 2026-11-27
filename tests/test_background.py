@@ -133,10 +133,13 @@ class BackgroundCase(unittest.TestCase):
         self.window.attach_tray(self.tray)
 
     def close_window(self):
+        from PySide6.QtCore import QEvent
+
         self.window._quitting = True
         self.window.close()
         self.window.deleteLater()
         self.app.processEvents()
+        self.app.sendPostedEvents(None, QEvent.DeferredDelete)  # apaga de verdade: janelas velhas pesam nos testes
 
 
 class TrayMenuTests(BackgroundCase):

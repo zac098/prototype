@@ -39,6 +39,21 @@ class TempCase(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name)
 
+    def dispose(self, window):
+        """Fecha e apaga de verdade a janela no fim do teste (deleteLater sozinho deixa janelas vivas na suíte)."""
+        from PySide6.QtCore import QEvent
+        from PySide6.QtWidgets import QApplication
+
+        def cleanup():
+            window._quitting = True
+            window.close()
+            window.deleteLater()
+            QApplication.processEvents()
+            QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+        self.addCleanup(cleanup)
+        return window
+
 
 class NamingOptionsTests(unittest.TestCase):
     """Trocar as opções de nome (ou o formato) não pode tornar exportável quem não foi reconhecido."""
@@ -242,8 +257,7 @@ class RetiredRenamerTests(TempCase):
             patch.start()
             self.addCleanup(patch.stop)
         (data / 'p').mkdir(parents=True)
-        window = MainWindow()
-        self.addCleanup(window.deleteLater)
+        window = self.dispose(MainWindow())
         page = window.open_tool('renamer')
         temp = data / 'p' / 'copia.pdf'
         temp.write_bytes(b'%PDF-1.4')
@@ -373,8 +387,7 @@ class SecondReviewQtTests(TempCase):
 
         self.app = create_app([])
         settings.reset()
-        self.window = MainWindow()
-        self.addCleanup(self.window.deleteLater)
+        self.window = self.dispose(MainWindow())
 
     def test_enter_in_an_empty_search_opens_nothing(self):
         self.window.home.open_first()
@@ -517,8 +530,7 @@ class MergePrintTests(TempCase):
         patch = mock.patch.object(config, 'CONVERT_DIR', self.tmp / 'conv')
         patch.start()
         self.addCleanup(patch.stop)
-        window = MainWindow()
-        self.addCleanup(window.deleteLater)
+        window = self.dispose(MainWindow())
         page = window.open_tool('merge')
         first, second = make_pdf(self.tmp / 'a.pdf'), make_pdf(self.tmp / 'b.pdf')
         page.add_paths([first])
@@ -551,8 +563,7 @@ class MergePrintTests(TempCase):
 
         create_app([])
         settings.reset()
-        window = MainWindow()
-        self.addCleanup(window.deleteLater)
+        window = self.dispose(MainWindow())
         page = window.open_tool('merge')
         threads = []
         result = page.in_background(lambda: threads.append(threading.current_thread()) or 'pronto')
