@@ -156,7 +156,7 @@ class MainWindow(QMainWindow):
             self.pages[tool_id] = page
             self.stack.addWidget(page)
             if tool.special:  # primeira vez: oferece continuar o lote da última sessão
-                QTimer.singleShot(350, lambda: self._offer_restore(page))
+                QTimer.singleShot(350, self, lambda: self._offer_restore(page))  # morre junto com a janela
         self.current_id = tool_id
         settings.current().record_use(tool_id)
         self.setWindowTitle(f'{tool.title} - {APP_TITLE}')  # o nome da ferramenta fica na barra de título

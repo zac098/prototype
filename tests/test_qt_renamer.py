@@ -766,16 +766,20 @@ class WindowTests(unittest.TestCase):
         self.addCleanup(self.window.deleteLater)
 
     def test_the_renamer_offers_to_restore_a_session_the_first_time_it_opens(self):
-        with mock.patch.object(RenamerPage, 'offer_restore_session') as offer:
-            self.window.open_tool('renamer')
+        with mock.patch.object(RenamerPage, 'offer_restore_session', autospec=True) as offer:
+            page = self.window.open_tool('renamer')
+
+            def mine():  # só as chamadas desta tela (outra janela de um teste anterior pode ainda existir)
+                return [call for call in offer.call_args_list if call.args and call.args[0] is page]
+
             deadline = time.monotonic() + 3
-            while not offer.called and time.monotonic() < deadline:
+            while not mine() and time.monotonic() < deadline:
                 self.app.processEvents()
                 time.sleep(0.01)
             self.window.show_home()
-            self.window.open_tool('renamer')
+            self.assertIs(self.window.open_tool('renamer'), page)
             self.app.processEvents()
-        offer.assert_called_once()
+            self.assertEqual(len(mine()), 1)
 
     def test_the_window_will_not_close_during_an_analysis(self):
         page = self.window.open_tool('renamer')
