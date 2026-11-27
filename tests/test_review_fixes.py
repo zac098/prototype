@@ -543,9 +543,16 @@ class MergePrintTests(TempCase):
             seen['notice'] = notice.called
             return False  # o usuário cancela a impressão
 
+        from rdf.qt.print_dialog import PrintDialog
+
         dialog = mock.Mock()
         dialog.exec.side_effect = dialog_exec
-        with mock.patch.object(page, 'make_print_dialog', return_value=dialog):
+        preview = mock.Mock()
+        preview.exec.return_value = PrintDialog.WINDOWS
+        with (
+            mock.patch.object(page, 'make_print_dialog', return_value=dialog),
+            mock.patch.object(page, 'make_preview_dialog', return_value=preview),
+        ):
             page.print_files()
         self.assertTrue(seen['running'])
         self.assertFalse(seen['accepted'])

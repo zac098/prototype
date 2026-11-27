@@ -1,5 +1,5 @@
 RDF - FERRAMENTAS DE PDF E RENOMEADOR DE FOLHAS - PACOTE PARA AVALIAÇÃO INSTITUCIONAL
-Versão 4.0.0
+Versão 4.0.1
 
 FINALIDADE
 Caixa de ferramentas de PDF que funciona offline (unir, dividir, comprimir, converter, girar, proteger, tarjar dados pessoais e outras), incluindo o renomeador de folhas de ponto, atestados e declarações.

@@ -11,7 +11,7 @@ por texto embutido ou OCR (Tesseract) e renomear os arquivos com revisão humana
 | Categoria | Ferramentas |
 |---|---|
 | Folha de ponto | Renomear folhas de ponto (matrícula, nome e mês; atestados e declarações) |
-| Organizar | Unir (com botão Imprimir, pela janela de impressão do Windows), Dividir, Remover páginas, Extrair páginas, Organizar páginas, Várias páginas por folha |
+| Organizar | Unir (com botão Imprimir, pela janela de impressão do Windows), Dividir, Remover páginas, Extrair páginas, Organizar páginas |
 | Otimizar | Comprimir, Reparar, OCR (PDF pesquisável) |
 | Converter | Imagem para PDF, PDF para imagem (páginas em JPG/PNG ou imagens embutidas), PDF para texto (.txt) |
 | Editar | Girar, Cortar margens, Números de página, Marca d'água, Escala de cinza, Ajustar tamanho do papel |
