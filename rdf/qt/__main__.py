@@ -4,6 +4,7 @@ import importlib
 import logging
 import sys
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
@@ -19,12 +20,40 @@ from rdf.qt.theme import FONT_FAMILY
 from rdf.qt.tray import TrayController
 from rdf.qt.window import MainWindow
 
+_translator = None  # a tradução do Qt instalada (uma só vez, mesmo com create_app chamado de novo)
+
+
+def install_translations(app):
+    """Textos do próprio Qt em português: botões Sim e Não, o menu de copiar e colar dos campos etc.
+
+    Sem o arquivo de tradução (instalação incompleta), esses textos ficam em inglês, sem erro."""
+    global _translator
+    if _translator is not None:
+        return True
+    import PySide6
+    from PySide6.QtCore import QLibraryInfo, QTranslator
+
+    package = Path(PySide6.__file__).resolve().parent
+    folders = (
+        QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath),
+        package / 'translations',  # PySide6 no Windows e o RDF empacotado
+        package / 'Qt' / 'translations',  # PySide6 no Linux
+    )
+    translator = QTranslator(app)
+    for folder in folders:
+        if translator.load('qtbase_pt_BR', str(folder)):
+            app.installTranslator(translator)
+            _translator = translator
+            return True
+    return False
+
 
 def create_app(argv=None):
     """QApplication com a fonte e o tema do RDF. Usado também pelos testes."""
     app = QApplication.instance() or QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName('RDF')
     app.setApplicationVersion(APP_VERSION)
+    install_translations(app)
     app.setStyle('Fusion')  # segue a paleta do tema (claro ou escuro) também no que a folha de estilo não cobre
     app.setFont(QFont(FONT_FAMILY, 10))
     theme.apply(app, settings.current().get('theme'))

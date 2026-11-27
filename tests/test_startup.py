@@ -60,6 +60,25 @@ class LightStartupTests(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_QT, 'PySide6 não instalado')
+class QtTranslationTests(unittest.TestCase):
+    def test_qt_own_texts_are_in_portuguese(self):
+        """Botões Sim/Não das perguntas e o menu de copiar e colar dos campos vinham em inglês."""
+        from PySide6.QtCore import QCoreApplication
+        from PySide6.QtWidgets import QMessageBox
+
+        from rdf.qt.__main__ import create_app
+
+        create_app([])
+        create_app([])  # de novo: a tradução não é instalada duas vezes
+        self.assertEqual(QCoreApplication.translate('QPlatformTheme', '&Yes'), '&Sim')
+        self.assertEqual(QCoreApplication.translate('QLineEdit', '&Copy'), '&Copiar')
+        box = QMessageBox()
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        self.assertEqual(sorted(button.text() for button in box.buttons()), ['&Não', '&Sim'])
+        box.deleteLater()
+
+
+@unittest.skipUnless(HAS_QT, 'PySide6 não instalado')
 class PageClassTests(unittest.TestCase):
     def test_each_tool_gets_its_own_screen(self):
         from rdf.pdftools.registry import TOOLS, TOOLS_BY_ID

@@ -40,12 +40,17 @@ Name: "sendto"; Description: "Adicionar ""RDF - Imprimir arquivos"" ao menu Envi
 Name: "autostart"; Description: "Iniciar o RDF com o Windows, em segundo plano (o botao direito abre mais rapido)"; GroupDescription: "Integracao com o Windows:"; Flags: unchecked
 
 [Files]
-Source: "..\dist\RDF.exe"; DestDir: "{app}"; Flags: ignoreversion
+; O RDF instalado é uma pasta (RDF.exe + _internal): abre rápido, sem descompactar nada a cada abertura.
+Source: "..\dist\RDF\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\docs\termos\TERMS_OF_USE.txt"; DestDir: "{app}\TERMOS"; DestName: "Termos de Uso.txt"; Flags: ignoreversion
 Source: "..\docs\termos\TERMS_MAINTENANCE_GUIDE.txt"; DestDir: "{app}\TERMOS"; DestName: "Orientacoes para Alteracao dos Termos.txt"; Flags: ignoreversion
 #if FileExists("..\docs\DELIVERY_GUIDE.md")
 Source: "..\docs\DELIVERY_GUIDE.md"; DestDir: "{app}\DOCUMENTACAO"; DestName: "Guia de Entrega.md"; Flags: ignoreversion
 #endif
+
+[InstallDelete]
+; As bibliotecas são trocadas inteiras a cada versão: nada de arquivo velho misturado com o novo.
+Type: filesandordirs; Name: "{app}\_internal"
 
 [Registry]
 ; Menu do botao direito dos PDFs (por usuario, sem administrador). No Windows 11 aparece em "Mostrar mais opcoes".

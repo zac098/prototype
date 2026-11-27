@@ -220,9 +220,9 @@ class DeliveryTests(unittest.TestCase):
         self.assertIn('coverage', (ROOT / 'requirements-dev.txt').read_text(encoding='utf-8'))
 
     def test_the_build_leaves_out_what_the_app_does_not_use(self):
-        bat = (ROOT / 'packaging' / 'build_package.bat').read_text(encoding='utf-8')
+        spec = (ROOT / 'packaging' / 'rdf.spec').read_text(encoding='utf-8')
         for module in ('QtWebEngineCore', 'QtQml', 'QtQuick', 'QtPdf', 'QtSql'):
-            self.assertIn(f'--exclude-module PySide6.{module}', bat)
+            self.assertIn(f"'PySide6.{module}',", spec)
 
     def test_the_app_only_imports_qt_modules_that_ship_in_essentials(self):
         essentials = {'QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtPrintSupport'}

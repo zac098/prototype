@@ -47,20 +47,34 @@ class BatchScriptTests(unittest.TestCase):
         targets = {t for t in re.findall(r'goto ([A-Za-z_]+)', text) if t.lower() != 'eof'}
         self.assertFalse(targets - labels, targets - labels)
 
-    def test_it_embeds_the_icon_and_checks_the_ocr_languages(self):
+    def test_it_checks_the_ocr_languages_and_builds_with_the_recipe(self):
         text = self.script.decode('utf-8')
-        self.assertIn('--add-data "%ROOT%assets' + BACKSLASH + 'icone.ico;assets"', text)
         self.assertIn('tessdata' + BACKSLASH + 'por.traineddata', text)
         self.assertIn('tessdata' + BACKSLASH + 'eng.traineddata', text)
-        self.assertIn('--add-binary "%TESSERACT_DIR%;Tesseract-OCR"', text)
+        self.assertIn('-m PyInstaller --noconfirm --clean "%ROOT%packaging' + BACKSLASH + 'rdf.spec"', text)
+        self.assertIn('set "TESSERACT_DIR=', text)  # a receita lê a pasta do Tesseract desta variável
+
+    def test_it_runs_the_self_test_and_delivers_both_versions(self):
+        text = self.script.decode('utf-8')
+        self.assertIn('RDF.exe" --autoteste "%SELFTEST%"', text)
+        self.assertIn('goto SELFTEST_ERROR', text)
+        self.assertIn('dist' + BACKSLASH + 'RDF_portatil.exe', text)
 
 
 class InstallerScriptTests(unittest.TestCase):
+    def test_the_installer_installs_the_folder_and_replaces_old_libraries(self):
+        iss = (ROOT / 'packaging' / 'installer.iss').read_text(encoding='utf-8')
+        self.assertIn('Source: "..' + BACKSLASH + 'dist' + BACKSLASH + 'RDF' + BACKSLASH + '*"; DestDir: "{app}"', iss)
+        self.assertIn('recursesubdirs createallsubdirs', iss)
+        # nada da versão anterior fica misturado com as bibliotecas novas
+        self.assertIn('[InstallDelete]', iss)
+        self.assertIn('Type: filesandordirs; Name: "{app}' + BACKSLASH + '_internal"', iss)
+
     def test_every_file_the_installer_needs_exists(self):
         iss = (ROOT / 'packaging' / 'installer.iss').read_text(encoding='utf-8')
         paths = re.findall(r'(?:Source: "|LicenseFile=|SetupIconFile=)([^";\r\n]+)', iss)
         self.assertGreaterEqual(len(paths), 4)
-        built_by_pyinstaller = {'dist/RDF.exe'}
+        built_by_pyinstaller = {'dist/RDF/*'}  # a pasta que o PyInstaller gera (RDF.exe + _internal)
         for raw in paths:
             normalized = raw.replace(BACKSLASH, '/')
             if normalized.endswith('DELIVERY_GUIDE.md') or normalized.lstrip('./') in built_by_pyinstaller:
@@ -130,11 +144,13 @@ class EntryPointTests(unittest.TestCase):
         self.assertIn('rdf = "rdf.__main__:main"', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
 
     def test_the_build_leaves_tkinter_out(self):
+        spec = (ROOT / 'packaging' / 'rdf.spec').read_text(encoding='utf-8')
         script = (ROOT / 'packaging' / 'build_package.bat').read_text(encoding='utf-8')
-        self.assertIn('--exclude-module tkinter --exclude-module tkinterdnd2', script)
-        self.assertNotIn('--collect-all tkinterdnd2', script)
+        self.assertIn("'tkinter',", spec)
+        self.assertIn("'tkinterdnd2',", spec)
+        self.assertNotIn('tkinterdnd2', script)
         self.assertNotIn('TCL_LIBRARY', script)  # sem a heurística de achar o Tcl/Tk, que falhava com o Python da Store
-        self.assertIn('--windowed', script)
+        self.assertIn('console=False', spec)  # janela, sem console preto atrás
 
     def test_the_installer_adds_the_print_entries_to_the_windows_menus(self):
         iss = (ROOT / 'packaging' / 'installer.iss').read_text(encoding='utf-8')
