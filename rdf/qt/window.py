@@ -2,7 +2,7 @@
 
 import time
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QByteArray, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -14,9 +14,10 @@ from PySide6.QtWidgets import (
 )
 
 from rdf import APP_VERSION
-from rdf.core import autostart
+from rdf.core import autostart, settings
 from rdf.core.config import resource_path
 from rdf.pdftools.registry import TOOLS_BY_ID
+from rdf.qt import app_dialogs, theme
 from rdf.qt.home import HomePage
 from rdf.qt.merge_page import MergePage
 from rdf.qt.renamer import RenamerPage
@@ -58,6 +59,10 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.home = HomePage()
         self.home.toolRequested.connect(self.open_tool)
+        self.home.themeRequested.connect(self.set_theme)
+        self.home.settingsRequested.connect(self.show_settings)
+        self.home.aboutRequested.connect(self.show_about)
+        self.home.shortcutsRequested.connect(self.show_shortcuts)
         self.stack.addWidget(self.home)
         row.addWidget(self.stack, 1)
 
@@ -65,9 +70,59 @@ class MainWindow(QMainWindow):
             (Qt.Key_Escape, self.on_escape),
             ('Ctrl+F', self.focus_search),
             ('Ctrl+K', self.focus_search),
+            ('F1', self.show_shortcuts),
+            ('Ctrl+,', self.show_settings),
+            ('Ctrl+Shift+T', self.toggle_theme),
         ):
             QShortcut(QKeySequence(sequence), self, activated=handler)
-        self.fit_to_screen()
+        settings.current().forget_tools(TOOLS_BY_ID)  # favoritas de ferramentas que não existem mais
+        if not self.restore_geometry():
+            self.fit_to_screen()
+
+    # ---- tamanho da janela ---------------------------------------------------------------
+    def restore_geometry(self):
+        """Volta ao tamanho e à posição da última vez. False se não havia nada salvo (ou não serve mais)."""
+        saved = settings.current().get('window_geometry')
+        if not saved:
+            return False
+        try:
+            if not self.restoreGeometry(QByteArray.fromBase64(saved.encode('ascii'))):
+                return False
+        except (ValueError, UnicodeEncodeError):
+            return False
+        area = QGuiApplication.primaryScreen().availableVirtualGeometry()
+        if not area.intersects(self.frameGeometry()):  # o monitor onde ela estava foi desligado
+            return False
+        self.setMinimumSize(min(MINIMUM_SIZE[0], area.width() - 20), min(MINIMUM_SIZE[1], area.height() - 40))
+        return True
+
+    def save_geometry(self):
+        settings.current().set('window_geometry', bytes(self.saveGeometry().toBase64()).decode('ascii'))
+
+    # ---- tema, configurações e ajuda -----------------------------------------------------
+    def set_theme(self, mode):
+        settings.current().set('theme', mode)
+        return theme.apply(None, mode)
+
+    def toggle_theme(self):
+        """Ctrl+Shift+T: alterna entre claro e escuro (sai do modo "igual ao Windows")."""
+        return self.set_theme('claro' if theme.is_dark() else 'escuro')
+
+    def make_settings_dialog(self):
+        dialog = app_dialogs.SettingsDialog(self, app_dialogs.tesseract_path())
+        dialog.themeChanged.connect(lambda mode: theme.apply(None, mode))
+        return dialog
+
+    def show_settings(self):
+        dialog = self.make_settings_dialog()
+        dialog.exec()
+        self.home.sync()  # "Limpar favoritas e recentes" muda a tela inicial
+
+    def show_about(self):
+        app_dialogs.about_dialog(self, app_dialogs.tesseract_path()).exec()
+
+    def show_shortcuts(self):
+        app_dialogs.shortcuts_dialog(self).exec()
 
     @property
     def back_button(self):
@@ -88,6 +143,7 @@ class MainWindow(QMainWindow):
     def show_home(self):
         self.setWindowTitle(APP_TITLE)
         self.current_id = None
+        self.home.sync()  # a ferramenta que acabou de ser usada entra nas recentes
         self.stack.setCurrentWidget(self.home)
 
     def open_tool(self, tool_id):
@@ -101,6 +157,7 @@ class MainWindow(QMainWindow):
             if tool.special:  # primeira vez: oferece continuar o lote da última sessão
                 QTimer.singleShot(350, lambda: self._offer_restore(page))
         self.current_id = tool_id
+        settings.current().record_use(tool_id)
         self.setWindowTitle(f'{tool.title} - {APP_TITLE}')  # o nome da ferramenta fica na barra de título
         self.stack.setCurrentWidget(page)
         return page
@@ -315,6 +372,7 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         event.accept()
+        self.save_geometry()
         if self.tray is not None:
             self.tray.hide()  # senão o ícone fica na bandeja até o mouse passar por cima
         QApplication.quit()  # com o fim da última janela desligado (bandeja), é isto que encerra o programa

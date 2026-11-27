@@ -758,6 +758,9 @@ class WindowTests(unittest.TestCase):
             patch = mock.patch.object(config, name, value)
             patch.start()
             self.addCleanup(patch.stop)
+        from rdf.core import settings
+
+        settings.reset()  # cada teste começa sem favoritas, recentes nem janela salva
         self.window = MainWindow()
         self.window.show()
         self.addCleanup(self.window.deleteLater)

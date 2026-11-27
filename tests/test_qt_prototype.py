@@ -54,6 +54,9 @@ class QtTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name)
+        from rdf.core import settings
+
+        settings.reset()  # cada teste começa sem favoritas, recentes nem janela salva
         self.window = MainWindow()
         self.window.resize(1100, 700)
         self.window.show()

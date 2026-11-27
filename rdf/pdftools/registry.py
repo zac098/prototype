@@ -478,6 +478,7 @@ TOOLS = (
 )
 
 TOOLS_BY_ID = {tool.id: tool for tool in TOOLS}
+NEW_TOOLS = frozenset()  # ferramentas novas desta versão: a tela inicial mostra o selo "Novo"
 
 
 def fold(text):

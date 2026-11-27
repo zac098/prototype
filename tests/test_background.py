@@ -122,6 +122,9 @@ class BackgroundCase(unittest.TestCase):
         self.addCleanup(enabled_patch.stop)
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
+        from rdf.core import settings
+
+        settings.reset()  # cada teste começa sem favoritas, recentes nem janela salva
         self.window = MainWindow()
         self.window.resize(900, 600)
         self.window.show()

@@ -183,9 +183,10 @@ QPushButton[variant="quiet"] { background: transparent; border: 1px solid transp
 QPushButton[variant="quiet"]:hover { background: @brand_soft; border-color: transparent; }
 QPushButton[variant="danger"] { color: @danger; }
 QPushButton[size="small"] { padding: 5px 10px; font-size: 9pt; }
-QPushButton[chip="true"] { border-radius: 14px; padding: 5px 12px; font-size: 9pt; }
+QPushButton[chip="true"] { border-radius: 12px; padding: 4px 13px; font-size: 9pt; min-height: 16px; }
 QPushButton[chip="true"]:checked { background: @brand; color: @on_brand; border-color: @brand; font-weight: 600; }
-QPushButton[chip="true"]:checked:focus { border: 2px solid @ink; padding: 4px 11px; }
+QPushButton[chip="true"]:checked:focus { border: 2px solid @ink; padding: 3px 12px; }
+QPushButton[chip="true"]:focus { padding: 3px 12px; }
 
 QToolButton#iconButton {
     background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 6px; color: @icon;
@@ -428,8 +429,10 @@ def apply(app=None, mode=None):
     COLORS.update(PALETTES[resolved])
     if app is None:
         return resolved
-    app.setPalette(_palette(COLORS))
-    app.setStyleSheet(build_stylesheet())
+    css = build_stylesheet()
+    if css != app.styleSheet():  # trocar a folha repole todos os widgets: só quando algo mudou de verdade
+        app.setPalette(_palette(COLORS))
+        app.setStyleSheet(css)
     notifier = manager()
     notifier.watch_system(app)
     if changed:

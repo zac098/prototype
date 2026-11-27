@@ -4,13 +4,16 @@ Tudo é pintado com QPainter, que desenha com bordas suaves (anti-aliasing) por 
 rolagem) usam uma só linguagem: desaceleração suave, e desligam sozinhas quando o Windows pede menos animação.
 """
 
+import math
+
 from PySide6.QtCore import QEasingCurve, QEvent, QPointF, QRectF, QSize, Qt, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QScrollArea,
     QSizePolicy,
     QToolButton,
@@ -115,32 +118,60 @@ class ToolTile(QWidget):
 
 
 class ToolRow(_Animated):
-    """Uma ferramenta na lista: ícone neutro, nome e descrição. Sem cartão até o mouse chegar."""
+    """Uma ferramenta na lista: ícone neutro, nome e descrição. Sem cartão até o mouse chegar.
+
+    A estrela no canto marca a ferramenta como favorita (aparece sob o mouse, no foco, ou sempre, se já é favorita).
+    Ctrl+D faz o mesmo pelo teclado; as setas levam à ferramenta vizinha (sinal navigate)."""
 
     clicked = Signal(str)
+    favoriteToggled = Signal(str)
+    navigate = Signal(object, int, int)  # (linha, dx, dy): a tela inicial escolhe a vizinha
+    STAR_SIZE = 26
 
-    def __init__(self, tool, parent=None):
+    def __init__(self, tool, favorite=False, badge='', parent=None):
         super().__init__(parent)
         self.tool = tool
+        self.favorite = favorite
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMinimumHeight(76)
         self.setAccessibleName(tool.title)
         self.setAccessibleDescription(tool.description)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._context_menu)
         # Largura só da grade (Ignored): as colunas ficam iguais e alinhadas entre as categorias.
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Minimum)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(68, 14, 16, 12)
+        layout.setContentsMargins(68, 14, 16 + self.STAR_SIZE, 12)
         layout.setSpacing(2)
+        heading = QHBoxLayout()
+        heading.setSpacing(8)
         self.title = QLabel(tool.title)
         self.title.setObjectName('rowTitle')
+        heading.addWidget(self.title)
+        self.badge = None
+        if badge:
+            self.badge = QLabel(badge)
+            self.badge.setObjectName('version')
+            heading.addWidget(self.badge)
+        heading.addStretch(1)
+        layout.addLayout(heading)
         self.description = QLabel(tool.description)
         self.description.setObjectName('rowDescription')
         self.description.setWordWrap(True)
-        for label in (self.title, self.description):
-            label.setAttribute(Qt.WA_TransparentForMouseEvents)  # o clique e o hover são da linha inteira
-            layout.addWidget(label)
+        layout.addWidget(self.description)
+        for label in (self.title, self.description, self.badge):
+            if label is not None:
+                label.setAttribute(Qt.WA_TransparentForMouseEvents)  # o clique e o hover são da linha inteira
         layout.addStretch(1)
+
+    def set_favorite(self, favorite):
+        self.favorite = bool(favorite)
+        self.update()
+
+    def star_rect(self):
+        size = self.STAR_SIZE
+        return QRectF(self.width() - size - 8, 10, size, size)
 
     def paintEvent(self, _event):
         painter = QPainter(self)
@@ -160,6 +191,9 @@ class ToolRow(_Animated):
             mix(COLORS['tile'], COLORS['brand_soft'], level),
             mix(COLORS['icon'], COLORS['brand'], level),
         )
+        if self.favorite or level > 0.05:
+            color = COLORS['star'] if self.favorite else mix(COLORS['bg'], COLORS['faint'], level)
+            paint_star(painter, self.star_rect().adjusted(5, 5, -5, -5), color, filled=self.favorite)
 
     def enterEvent(self, event):
         self.animate_to(1.0)
@@ -179,15 +213,106 @@ class ToolRow(_Animated):
         super().focusOutEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
-            self.clicked.emit(self.tool.id)
+        point = event.position()
+        if event.button() == Qt.LeftButton and self.rect().contains(point.toPoint()):
+            if self.star_rect().adjusted(-4, -4, 4, 4).contains(point):
+                self.favoriteToggled.emit(self.tool.id)
+            else:
+                self.clicked.emit(self.tool.id)
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
+        key = event.key()
+        if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
             self.clicked.emit(self.tool.id)
+        elif key == Qt.Key_D and event.modifiers() & Qt.ControlModifier:
+            self.favoriteToggled.emit(self.tool.id)
+        elif key in ARROWS:
+            self.navigate.emit(self, *ARROWS[key])
         else:
             super().keyPressEvent(event)
+
+    def _context_menu(self, position):
+        menu = QMenu(self)
+        menu.addAction('Abrir', lambda: self.clicked.emit(self.tool.id))
+        label = 'Remover das favoritas' if self.favorite else 'Adicionar às favoritas'
+        menu.addAction(f'{label}\tCtrl+D', lambda: self.favoriteToggled.emit(self.tool.id))
+        menu.exec(self.mapToGlobal(position))
+
+
+ARROWS = {Qt.Key_Left: (-1, 0), Qt.Key_Right: (1, 0), Qt.Key_Up: (0, -1), Qt.Key_Down: (0, 1)}
+
+
+def paint_star(painter, rect, color, filled=True):
+    """Estrela de cinco pontas dentro de rect (cheia ou só o contorno)."""
+    center = rect.center()
+    outer = min(rect.width(), rect.height()) / 2
+    inner = outer * 0.45
+    points = []
+    for index in range(10):
+        radius = outer if index % 2 == 0 else inner
+        angle = math.radians(-90 + index * 36)
+        points.append(QPointF(center.x() + radius * math.cos(angle), center.y() + radius * math.sin(angle)))
+    pen = QPen(QColor(color), 1.6)
+    pen.setJoinStyle(Qt.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(QColor(color) if filled else Qt.NoBrush)
+    painter.drawPolygon(QPolygonF(points))
+
+
+class BrandMark(QWidget):
+    """A marca do RDF: quadrado arredondado na cor da marca com as letras do app."""
+
+    def __init__(self, size=40, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self.setAccessibleName('RDF')
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(COLORS['brand']))
+        painter.drawRoundedRect(rect, rect.width() * 0.28, rect.width() * 0.28)
+        # uma "folha" dobrada no canto, como um documento
+        fold = rect.width() * 0.26
+        painter.setBrush(mix(COLORS['brand'], COLORS['on_brand'], 0.35))
+        painter.drawPolygon(
+            QPolygonF(
+                [
+                    QPointF(rect.right() - fold, rect.top()),
+                    QPointF(rect.right(), rect.top() + fold),
+                    QPointF(rect.right() - fold, rect.top() + fold),
+                ]
+            )
+        )
+        font = QFont(FONT_FAMILY)
+        font.setBold(True)
+        font.setPixelSize(max(8, int(rect.width() * 0.32)))
+        painter.setFont(font)
+        painter.setPen(QColor(COLORS['on_brand']))
+        painter.drawText(rect, Qt.AlignCenter, 'RDF')
+
+
+def icon_button(glyph, fallback, tooltip, parent=None):
+    """Botão só de ícone (fonte de ícones do Windows, ou o símbolo simples), com nome para o leitor de tela."""
+    button = QToolButton(parent)
+    button.setObjectName('iconButton')
+    button.setCursor(Qt.PointingHandCursor)
+    button.setToolTip(tooltip)
+    button.setAccessibleName(tooltip.split(' (')[0])
+    button.setFocusPolicy(Qt.StrongFocus)
+    button.setFixedSize(40, 40)
+    if has_icon_font():
+        button.setText(chr(glyph))
+        button.setFont(glyph_font(16))
+    else:
+        button.setText(fallback)
+        font = QFont(FONT_FAMILY)
+        font.setPixelSize(17)
+        button.setFont(font)
+    return button
 
 
 class BackButton(_Animated):
@@ -277,6 +402,8 @@ class SearchBar(_Animated):
     """Busca em pílula: lupa, dica de atalho, botão de limpar e um halo de foco que surge suavemente."""
 
     textChanged = Signal(str)
+    submitted = Signal()  # Enter: abre o primeiro resultado
+    moveDown = Signal()  # seta para baixo: vai para a lista de ferramentas
     MAX_WIDTH = 560
 
     def __init__(self, placeholder='Buscar ferramenta…', parent=None):
@@ -339,6 +466,12 @@ class SearchBar(_Animated):
 
     def eventFilter(self, watched, event):
         if watched is self.edit:
+            if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                self.submitted.emit()
+                return True
+            if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Down:
+                self.moveDown.emit()
+                return True
             if event.type() == QEvent.FocusIn:
                 self._focused = True
                 self.hint.hide()
