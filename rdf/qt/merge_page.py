@@ -29,7 +29,7 @@ class MergePage(ToolPage):
         self.print_button.setProperty('variant', 'success')
         self.print_button.setMinimumHeight(42)
         self.print_button.setToolTip(
-            'Junta os arquivos da lista, na ordem, e abre a janela de impressão do Windows (Ctrl+P). '
+            'Junta os arquivos da lista, na ordem, e abre no Microsoft Edge para imprimir pela tela dele (Ctrl+P). '
             'Não salva nenhum arquivo.'
         )
         self.print_button.clicked.connect(self.print_files)
@@ -37,7 +37,8 @@ class MergePage(ToolPage):
         shortcut = QShortcut(QKeySequence('Ctrl+P'), self, activated=self.print_files)
         shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.print_hint = QLabel(
-            '"Unir PDF" salva o PDF juntado onde você escolher. "Imprimir" junta só para imprimir: nada fica salvo.'
+            '"Unir PDF" salva o PDF juntado onde você escolher. "Imprimir" junta e abre no Edge para imprimir '
+            '(Ctrl+P): nada fica salvo.'
         )
         self.print_hint.setObjectName('hint')
         self.print_hint.setWordWrap(True)
@@ -145,12 +146,16 @@ class MergePage(ToolPage):
         shutil.rmtree(self.print_folder, ignore_errors=True)
 
     def _print(self, files):
-        from rdf.qt.print_dialog import PrintDialog
+        from rdf.qt.print_dialog import PrintDialog, edge_path
 
         try:
             pdf = self.printable_pdf(files)
             with FITZ_LOCK, ops.open_pdf(pdf) as document:
                 total = document.page_count
+            if edge_path() is not None:
+                # O caminho preferido: o Edge abre o PDF juntado e a impressão é pela tela dele (Ctrl+P), com prévia
+                # e todas as opções. Sem o Edge, vale a tela de impressão do próprio RDF.
+                return self.open_in_edge(pdf)
             names = [Path(path).name for path in files]
             title = names[0] if len(names) == 1 else f'RDF - {len(names)} arquivos'
             preview = self.make_preview_dialog(pdf, title)
@@ -202,7 +207,7 @@ class MergePage(ToolPage):
         except OSError as exc:
             self.set_message(f'Não foi possível abrir o Edge: {exc}', 'error')
             return
-        self.set_message('O PDF juntado abriu no Edge: use Ctrl+P lá para imprimir. Nada fica salvo.', 'ok')
+        self.set_message('Aberto no Edge: aperte Ctrl+P lá para imprimir. Nada fica salvo no computador.', 'ok')
         return copy
 
     def _print_with_windows(self, pdf, total, title):
