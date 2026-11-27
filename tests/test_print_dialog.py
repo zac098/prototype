@@ -254,3 +254,58 @@ class MergeFlowTests(QtPrintCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EdgeLikeOptionsTests(QtPrintCase):
+    def test_custom_scale_is_a_percent_of_the_real_size(self):
+        _x, _y, width, _height = printing.place_page((0, 0, 1000, 1000), (100, 200), 'custom', 2, percent=50)
+        self.assertEqual(width, 100.0)  # 50% de 2 pixels por ponto = 1 pixel por ponto
+        _x, _y, width, _height = printing.place_page((0, 0, 1000, 1000), (100, 200), 'custom', 1, percent=9999)
+        self.assertEqual(width, 400.0)  # no máximo 400%
+
+    def test_scale_percent_and_quality_reach_the_settings(self):
+        dialog = self.dialog(make_pdf(self.tmp / 'a.pdf', pages=1))
+        self.assertTrue(dialog.percent_spin.isHidden())
+        dialog.scale_combo.setCurrentIndex(dialog.scale_combo.findData('custom'))
+        dialog.update_controls()
+        self.assertFalse(dialog.percent_spin.isHidden())
+        dialog.percent_spin.setValue(80)
+        dialog.quality_combo.setCurrentIndex(dialog.quality_combo.findData(600))
+        settings = dialog.settings()
+        self.assertEqual((settings.scale, settings.percent, settings.dpi), ('custom', 80, 600))
+        dialog.refresh_preview()
+        self.assertFalse(dialog.preview.pixmap().isNull())
+
+    def test_a_smaller_scale_prints_a_smaller_page(self):
+        source = make_pdf(self.tmp / 'a.pdf', pages=1)
+        printing.print_with_settings(source, self.printer(), printing.PrintSettings(scale='custom', percent=50))
+        with fitz.open(self.out) as document:
+            pix = document[0].get_pixmap(dpi=36)
+        pixels = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, 0]
+        ys, xs = np.where(pixels < 128)
+        self.assertAlmostEqual((xs.max() - xs.min()) / pix.width, 0.5, delta=0.05)  # metade da largura do A4
+
+    def test_the_edge_button_hands_over_to_edge(self):
+        dialog = self.dialog(make_pdf(self.tmp / 'a.pdf', pages=1))
+        dialog.done(dialog.EDGE)
+        self.assertEqual(dialog.result(), dialog.EDGE)
+
+    def test_open_in_edge_copies_to_the_screen_temp_folder_and_launches(self):
+        from rdf.core import settings
+        from rdf.pdftools.registry import TOOLS_BY_ID
+        from rdf.qt.merge_page import MergePage
+
+        settings.reset()
+        patch = mock.patch.object(config, 'CONVERT_DIR', self.tmp / 'temp')
+        patch.start()
+        self.addCleanup(patch.stop)
+        page = MergePage(TOOLS_BY_ID['merge'])
+        self.addCleanup(page.deleteLater)
+        launched = []
+        copy = page.open_in_edge(make_pdf(self.tmp / 'a.pdf', pages=1), launcher=launched.append)
+        self.assertTrue(copy.is_file())
+        self.assertTrue(copy.is_relative_to(page.cache.folder))
+        self.assertEqual(launched[0][1], copy.as_uri())
+        self.assertIn('Ctrl+P', page.message.text())
+        page.discard_work()  # sair do Unir PDF apaga a cópia
+        self.assertFalse(copy.exists())

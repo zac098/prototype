@@ -157,6 +157,8 @@ class MergePage(ToolPage):
             choice = preview.exec()
             if choice == PrintDialog.WINDOWS:
                 return self._print_with_windows(pdf, total, title)
+            if choice == PrintDialog.EDGE:
+                return self.open_in_edge(pdf)
             if not choice:
                 self.set_message('Impressão cancelada.', 'info')
                 return
@@ -178,6 +180,30 @@ class MergePage(ToolPage):
         where = printer.printerName() or 'a impressora'
         detail = f'{pages} página(s)' if pages == sheets else f'{pages} página(s) em {sheets} folha(s)'
         self.set_message(f'{detail} enviada(s) para "{where}". Acompanhe na fila da impressora.', 'ok')
+
+    def open_in_edge(self, pdf, launcher=None):
+        """Abre o PDF juntado no Edge, para imprimir pela tela dele. A cópia fica na pasta temporária desta tela (o Edge
+        precisa dela aberta) e é apagada quando o usuário sai do Unir PDF ou fecha o RDF."""
+        import subprocess
+        import uuid
+
+        from rdf.qt.print_dialog import edge_path
+
+        edge = edge_path()
+        if edge is None and launcher is None:
+            self.set_message('O Microsoft Edge não foi encontrado neste computador.', 'error')
+            return
+        folder = self.cache.folder / 'edge'
+        folder.mkdir(parents=True, exist_ok=True)
+        copy = folder / f'imprimir-{uuid.uuid4().hex[:6]}.pdf'
+        shutil.copyfile(pdf, copy)
+        try:
+            (launcher or subprocess.Popen)([edge or 'msedge', copy.as_uri()])
+        except OSError as exc:
+            self.set_message(f'Não foi possível abrir o Edge: {exc}', 'error')
+            return
+        self.set_message('O PDF juntado abriu no Edge: use Ctrl+P lá para imprimir. Nada fica salvo.', 'ok')
+        return copy
 
     def _print_with_windows(self, pdf, total, title):
         """A janela de impressão do Windows (sem prévia), para quem precisa dos ajustes do driver."""

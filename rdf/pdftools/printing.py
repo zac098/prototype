@@ -17,6 +17,7 @@ from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import ops
 
 MAX_DPI = 300  # acima disso a página não fica melhor no papel e a imagem enviada à impressora só pesa mais
+PRINT_MAX_DPI = 600  # a opção "Qualidade" da tela de impressão vai até aqui
 
 
 def selected_pages(printer, total):
@@ -119,7 +120,9 @@ class PrintSettings:
     per_sheet: int = 1
     orientation: str = 'auto'  # auto | portrait | landscape
     paper: str = 'A4'
-    scale: str = 'fit'  # fit (ajustar à folha) | actual (tamanho real)
+    scale: str = 'fit'  # fit (ajustar à folha) | actual (tamanho real) | custom (percent %)
+    percent: int = 100  # escala personalizada, em % do tamanho real
+    dpi: int = 300  # qualidade: resolução das páginas enviadas à impressora
     margins: str = 'normal'  # normal | minimum
     grayscale: bool = False
     copies: int = 1
@@ -169,11 +172,17 @@ def cell_rects(content, columns, rows, gap):
     ]
 
 
-def place_page(cell, page_size, scale, device_per_point):
-    """Onde a página fica no seu espaço: ajustada (sem distorcer) ou em tamanho real, sempre centralizada."""
+def place_page(cell, page_size, scale, device_per_point, percent=100):
+    """Onde a página fica no seu espaço: ajustada (sem distorcer), em tamanho real ou numa escala em %, sempre
+    centralizada (o que passar da folha é cortado, como em qualquer programa)."""
     x, y, width, height = cell
     page_w, page_h = page_size
-    factor = min(width / page_w, height / page_h) if scale != 'actual' else device_per_point
+    if scale == 'actual':
+        factor = device_per_point
+    elif scale == 'custom':
+        factor = device_per_point * max(10, min(400, int(percent))) / 100
+    else:
+        factor = min(width / page_w, height / page_h)
     shown_w, shown_h = page_w * factor, page_h * factor
     return x + (width - shown_w) / 2, y + (height - shown_h) / 2, shown_w, shown_h
 
@@ -201,7 +210,7 @@ def paint_sheet(painter, content, document, sheet_pages, settings, landscape, de
     painter.setClipRect(content)
     for index, cell in zip(sheet_pages, cells):
         rect = document[index].rect
-        x, y, width, height = place_page(cell, (rect.width, rect.height), scale, device_per_point)
+        x, y, width, height = place_page(cell, (rect.width, rect.height), scale, device_per_point, settings.percent)
         pixels = min(width / rect.width, max_pixels_per_point)
         painter.drawImage(QRectF(x, y, width, height), _page_image(document, index, pixels, settings.grayscale))
     painter.restore()
@@ -315,7 +324,14 @@ def print_with_settings(source, printer, settings, progress=ops._noop):
                     content.adjust(extra_x, extra_y, -extra_x, -extra_y)
                 device_per_point = printer.resolution() / 72
                 paint_sheet(
-                    painter, content, document, sheet, settings, landscape_of(sheet), device_per_point, MAX_DPI / 72
+                    painter,
+                    content,
+                    document,
+                    sheet,
+                    settings,
+                    landscape_of(sheet),
+                    device_per_point,
+                    max(72, min(PRINT_MAX_DPI, int(settings.dpi))) / 72,
                 )
             finished = True
         finally:

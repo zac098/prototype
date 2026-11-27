@@ -37,7 +37,8 @@ PER_SHEET = (
     (6, '6 páginas por folha'),
     (9, '9 páginas por folha'),
 )
-SCALES = (('fit', 'Ajustar à folha'), ('actual', 'Tamanho real (100%)'))
+SCALES = (('fit', 'Ajustar à folha'), ('actual', 'Tamanho real (100%)'), ('custom', 'Personalizada (%)'))
+QUALITY = ((150, 'Rascunho (150 dpi)'), (300, 'Normal (300 dpi)'), (600, 'Alta (600 dpi)'))
 MARGINS = (('normal', 'Normal (1 cm)'), ('minimum', 'Mínima'))
 COLORS = ((False, 'Colorido'), (True, 'Preto e branco'))
 DUPLEX = (
@@ -55,6 +56,35 @@ def available_printers():
     return names, QPrinterInfo.defaultPrinterName()
 
 
+def edge_path():
+    """O msedge.exe instalado (vem com o Windows 10 e 11), ou None se não houver."""
+    import os
+    import shutil
+    import sys
+
+    if sys.platform != 'win32':
+        return None
+    try:
+        import winreg
+
+        key = r'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe'
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                with winreg.OpenKey(root, key) as handle:
+                    value = winreg.QueryValue(handle, None)
+                if value and os.path.isfile(value):
+                    return value
+            except OSError:
+                continue
+    except ImportError:
+        pass
+    for base in (os.environ.get('ProgramFiles(x86)'), os.environ.get('ProgramFiles')):
+        candidate = os.path.join(base or '', 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+        if base and os.path.isfile(candidate):
+            return candidate
+    return shutil.which('msedge')
+
+
 def _combo(entries):
     combo = QComboBox()
     for value, text in entries:
@@ -63,9 +93,11 @@ def _combo(entries):
 
 
 class PrintDialog(QDialog):
-    """exec() devolve 1 (imprimir com estas opções), 0 (cancelou) ou WINDOWS (usar a janela do Windows)."""
+    """exec() devolve 1 (imprimir com estas opções), 0 (cancelou), WINDOWS (usar a janela do Windows) ou EDGE (abrir o
+    PDF juntado no Microsoft Edge, para imprimir por ele)."""
 
     WINDOWS = 2
+    EDGE = 3
 
     def __init__(self, pdf, title='', parent=None, printers=None):
         super().__init__(parent)
@@ -177,12 +209,21 @@ class PrintDialog(QDialog):
         form.addRow('Por folha', self.per_sheet_combo)
         self.scale_combo = _combo(SCALES)
         form.addRow('Escala', self.scale_combo)
+        self.percent_spin = QSpinBox()
+        self.percent_spin.setRange(10, 400)
+        self.percent_spin.setValue(100)
+        self.percent_spin.setSuffix(' %')
+        self.percent_spin.setAccessibleName('Escala personalizada em porcentagem')
+        form.addRow('', self.percent_spin)
         self.margins_combo = _combo(MARGINS)
         form.addRow('Margens', self.margins_combo)
         self.color_combo = _combo(COLORS)
         form.addRow('Cor', self.color_combo)
         self.duplex_combo = _combo(DUPLEX)
         form.addRow('Lados', self.duplex_combo)
+        self.quality_combo = _combo(QUALITY)
+        self.quality_combo.setCurrentIndex(self.quality_combo.findData(300))
+        form.addRow('Qualidade', self.quality_combo)
         layout.addLayout(form)
 
         self.error = QLabel('')
@@ -211,6 +252,15 @@ class PrintDialog(QDialog):
         self.windows_button.setToolTip('Abre a janela de impressão do Windows, sem prévia, com os ajustes do driver.')
         self.windows_button.clicked.connect(lambda: self.done(self.WINDOWS))
         layout.addWidget(self.windows_button)
+        self.edge_button = QPushButton('Abrir no Microsoft Edge…')
+        self.edge_button.setProperty('variant', 'quiet')
+        self.edge_button.setToolTip(
+            'Abre o PDF juntado no Edge, para imprimir pela tela de impressão dele (Ctrl+P). '
+            'O arquivo temporário é apagado quando você sai do Unir PDF.'
+        )
+        self.edge_button.clicked.connect(lambda: self.done(self.EDGE))
+        self.edge_button.setVisible(edge_path() is not None)
+        layout.addWidget(self.edge_button)
         self.adopt_printer_defaults(self.printer_combo.currentText())
         return panel
 
@@ -255,6 +305,8 @@ class PrintDialog(QDialog):
             orientation=self.orientation_combo.currentData(),
             paper=self.paper_combo.currentData(),
             scale=self.scale_combo.currentData(),
+            percent=self.percent_spin.value(),
+            dpi=self.quality_combo.currentData(),
             margins=self.margins_combo.currentData(),
             grayscale=bool(self.color_combo.currentData()),
             copies=self.copies_spin.value(),
@@ -270,6 +322,7 @@ class PrintDialog(QDialog):
         self.pages_edit.setVisible(self.pages_combo.currentData() == 'custom')
         many = (self.per_sheet_combo.currentData() or 1) > 1
         self.scale_combo.setEnabled(not many)
+        self.percent_spin.setVisible(self.scale_combo.currentData() == 'custom' and not many)
         self.scale_combo.setToolTip(
             'Com várias páginas por folha, cada página é ajustada ao seu espaço.' if many else ''
         )
