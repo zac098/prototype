@@ -64,7 +64,7 @@ jobs:
           foreach ($lang in 'por', 'eng') {
             $file = "$dir\tessdata\$lang.traineddata"
             if (-not (Test-Path $file)) {
-              Invoke-WebRequest "https://github.com/tesseract-ocr/tessdata/raw/main/$lang.traineddata" -OutFile $file
+              Invoke-WebRequest "https://github.com/tesseract-ocr/tessdata/raw/main/$lang.traineddata" -OutFile $file -MaximumRetryCount 5 -RetryIntervalSec 15
             }
           }
           & "$dir\tesseract.exe" --list-langs
