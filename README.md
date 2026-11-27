@@ -28,7 +28,7 @@ Fora do escopo por enquanto: converter PDF para Word, Excel e PowerPoint, assina
 
 ## Requisitos
 
-- Python 3.10 ou superior
+- Python 3.11 ou superior (o Pillow fixado em `requirements.txt` não instala no 3.10)
 - [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) com os idiomas `por` e `eng`, usado pelo OCR e pelo
   renomeador (o app procura nas pastas comuns; para outro local, crie `tesseract_path.txt` na raiz com o caminho do `tesseract.exe`)
 

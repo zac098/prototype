@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "rdf"
 description = "RDF: ferramentas de PDF (unir, dividir, comprimir, converter, proteger...) e renomeação de folhas de ponto por OCR"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dynamic = ["version", "dependencies", "optional-dependencies"]
 
 [project.scripts]
@@ -24,15 +24,19 @@ optional-dependencies.build = { file = ["requirements-build.txt"] }
 optional-dependencies.dev = { file = ["requirements-dev.txt"] }
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 extend-exclude = [".venv_build", "pdf pra testar programa", "resultados"]
 
 [tool.ruff.format]
 quote-style = "preserve"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
-ignore = ["E501"]  # linhas longas: o formatador quebra o que dá; textos longos ficam
+select = ["E", "F", "W", "I", "B", "C4", "UP", "PIE"]
+ignore = [
+    "E501",  # linhas longas: o formatador quebra o que dá; textos longos ficam
+    "B005",  # strip com vários caracteres é proposital (tira um conjunto de símbolos das pontas)
+    "B905",  # zip sem strict: os pares sempre têm o mesmo tamanho onde é usado
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Os testes importam _source primeiro para colocar a raiz do projeto no sys.path.

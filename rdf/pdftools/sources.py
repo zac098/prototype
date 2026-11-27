@@ -45,9 +45,9 @@ TEXT_MARGIN = 42  # pontos
 OFFICE_TIMEOUT_SECONDS = 180
 
 OFFICE_APPS = {  # extensão -> (programa, nome do processo)
-    **{ext: ('Word', 'WINWORD') for ext in WORD_EXTENSIONS},
-    **{ext: ('Excel', 'EXCEL') for ext in EXCEL_EXTENSIONS},
-    **{ext: ('PowerPoint', 'POWERPNT') for ext in POWERPOINT_EXTENSIONS},
+    **dict.fromkeys(WORD_EXTENSIONS, ('Word', 'WINWORD')),
+    **dict.fromkeys(EXCEL_EXTENSIONS, ('Excel', 'EXCEL')),
+    **dict.fromkeys(POWERPOINT_EXTENSIONS, ('PowerPoint', 'POWERPNT')),
 }
 
 # Os caminhos vão por variável de ambiente (RDF_ORIGEM e RDF_DESTINO), nunca dentro do texto do script: assim um nome
@@ -318,14 +318,14 @@ def _text_document(path):
     else:
         text = raw.decode('latin-1')
     body = f'<pre>{html.escape(text)}</pre>'
-    return _html_document(f'<html><body>{body}</body></html>'.encode('utf-8'), path.name)
+    return _html_document(f'<html><body>{body}</body></html>'.encode(), path.name)
 
 
 def _html_document(data, name):
     if b'<style' not in data.lower():
-        data = data.replace(b'</head>', f'<style>{_TEXT_PAGE_CSS}</style></head>'.encode('utf-8'), 1)
+        data = data.replace(b'</head>', f'<style>{_TEXT_PAGE_CSS}</style></head>'.encode(), 1)
         if b'<style' not in data.lower():
-            data = f'<html><head><style>{_TEXT_PAGE_CSS}</style></head>'.encode('utf-8') + data + b'</html>'
+            data = f'<html><head><style>{_TEXT_PAGE_CSS}</style></head>'.encode() + data + b'</html>'
     try:
         document = fitz.open(stream=data, filetype='html')
     except Exception as exc:

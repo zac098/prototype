@@ -75,7 +75,7 @@ class RedactTests(ToolTestCase):
         result = ops.redact_pdf(self.source, self.dest)
         text = self.text(self.dest)
         self.assertNotIn('123.456.789-09', text)
-        self.assertNotIn('123.456.789-09'.encode(), self.dest.read_bytes())
+        self.assertNotIn(b'123.456.789-09', self.dest.read_bytes())
         self.assertIn('Maria', text)  # o resto continua
         self.assertIn('1 trecho tarjado', result.message)
 

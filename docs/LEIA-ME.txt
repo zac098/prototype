@@ -13,7 +13,7 @@ ALTERACOES DESTA EDICAO
 - Geracao alterada para produzir pacote de entrega local com SHA-256, sem publicacao no GitHub.
 
 INICIO RAPIDO
-1. Instale Python 3.10 ou superior, as dependencias de requirements.txt e o Tesseract OCR.
+1. Instale Python 3.11 ou superior, as dependencias de requirements.txt e o Tesseract OCR.
 2. Execute: python -m rdf (ou python rdf_app.py).
 3. Execute os testes: python -m unittest discover -s tests -q
 4. No Windows, use packaging\build_package.bat para gerar o instalador.
