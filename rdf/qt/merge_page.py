@@ -6,6 +6,8 @@ sozinho.
 """
 
 import shutil
+import threading
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -48,14 +50,34 @@ class MergePage(ToolPage):
         self.update_print_button()
 
     # ---- impressão -------------------------------------------------------------------------------
-    def printable_pdf(self):
-        """Um PDF só com todos os arquivos da lista, na ordem (o próprio arquivo, se for um só)."""
+    def in_background(self, function, *args):
+        """Roda function numa thread e mantém a janela viva enquanto espera (converter um documento do Office leva
+        segundos). O teclado e o mouse ficam de fora, como no resto do app: nada é clicado no meio."""
+        outcome = {}
+
+        def target():
+            try:
+                outcome['value'] = function(*args)
+            except BaseException as exc:  # devolvido para quem chamou, na thread da janela
+                outcome['error'] = exc
+
+        worker = threading.Thread(target=target, name='rdf-imprimir', daemon=True)
+        worker.start()
         responsive = Responsive()
-        pdfs = []
-        for position, path in enumerate(self.files, start=1):
-            self.set_message(f'Preparando {position} de {len(self.files)}: {Path(path).name}', 'info')
+        while worker.is_alive():
             responsive.pulse()
-            pdfs.append(self.cache.resolve(path))
+            time.sleep(0.02)
+        if 'error' in outcome:
+            raise outcome['error']
+        return outcome.get('value')
+
+    def printable_pdf(self, files=None):
+        """Um PDF só com todos os arquivos da lista, na ordem (o próprio arquivo, se for um só)."""
+        files = list(self.files if files is None else files)
+        pdfs = []
+        for position, path in enumerate(files, start=1):
+            self.set_message(f'Preparando {position} de {len(files)}: {Path(path).name}', 'info')
+            pdfs.append(self.in_background(self.cache.resolve, path))
         with FITZ_LOCK:
             if len(pdfs) == 1:
                 ops.open_pdf(pdfs[0]).close()  # protegido por senha ou vazio: erro com mensagem pronta
@@ -82,12 +104,23 @@ class MergePage(ToolPage):
         if not self.files:
             self.set_message('Adicione os arquivos que quer imprimir.', 'error')
             return
+        # Enquanto prepara e imprime, a tela conta como ocupada: arquivos que chegarem do botão direito do Explorer não
+        # entram na lista no meio (a janela avisa), e a lista usada é a de quando o botão foi clicado.
+        self.running = True
+        self.update_print_button()
         try:
-            pdf = self.printable_pdf()
+            return self._print(list(self.files))
+        finally:
+            self.running = False
+            self.update_print_button()
+
+    def _print(self, files):
+        try:
+            pdf = self.printable_pdf(files)
             with FITZ_LOCK, ops.open_pdf(pdf) as document:
                 total = document.page_count
             printer = self.make_printer()
-            names = [Path(path).name for path in self.files]
+            names = [Path(path).name for path in files]
             printer.setDocName(names[0] if len(names) == 1 else f'RDF - {len(names)} arquivos')
             printer.setFromTo(1, total)
             dialog = self.make_print_dialog(printer)

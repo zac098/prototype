@@ -405,3 +405,158 @@ class SecondReviewQtTests(TempCase):
         theme.apply(None, 'escuro')
         self.addCleanup(theme.apply, None, 'claro')
         self.assertNotEqual(page.picker.grid.item(0).icon().cacheKey(), before)
+
+
+class ThirdReviewTests(TempCase):
+    def office_script(self, extension):
+        from rdf.pdftools import sources
+
+        source = self.tmp / f'doc{extension}'
+        source.write_bytes(b'x')
+        captured = []
+
+        def run(script, origin, temp):
+            captured.append(script)
+            Path(temp).write_bytes(b'%PDF-1.4 falso')
+            return mock.Mock(returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch.object(sources, 'office_available', return_value=True),
+            mock.patch.object(sources, '_run_powershell', side_effect=run),
+        ):
+            sources._office_to_pdf(source, self.tmp / f'saida{extension}.pdf')
+        return captured[0]
+
+    def test_office_scripts_never_wait_for_a_hidden_password_prompt(self):
+        self.assertIn("'rdf-sem-senha'", self.office_script('.docx'))
+        self.assertIn("'rdf-sem-senha'", self.office_script('.xlsx'))
+
+    def test_powerpoint_also_opens_with_macros_off(self):
+        script = self.office_script('.pptx')
+        self.assertIn('AutomationSecurity = 3', script)
+        self.assertLess(script.index('AutomationSecurity = 3'), script.index('Presentations.Open'))
+
+    def test_the_users_own_documents_keep_the_office_process_alive(self):
+        for extension, count in (
+            ('.docx', 'Documents.Count'),
+            ('.xlsx', 'Workbooks.Count'),
+            ('.pptx', 'Presentations.Count'),
+        ):
+            script = self.office_script(extension)
+            self.assertIn(count, script)
+            self.assertIn('$outros -eq 0', script)
+            self.assertNotIn('@COUNT@', script)
+
+    def test_busy_office_errors_are_retried(self):
+        self.assertIn('0x8001010A', self.office_script('.docx'))
+
+    def test_a_timeout_closes_the_office_processes_the_script_recorded(self):
+        import subprocess
+
+        from rdf.pdftools import sources
+
+        temp = self.tmp / 'x.rdf-tmp.pdf'
+        pids = temp.with_suffix('.pids')
+        killed = []
+
+        def fake_run(command, **kwargs):
+            if command[0] == 'powershell':
+                pids.write_text('111,222', encoding='utf-8')  # o script anotou os processos que abriu
+                raise subprocess.TimeoutExpired('powershell', 1)
+            killed.append(command)
+            return mock.Mock(returncode=0)
+
+        with mock.patch.object(sources.subprocess, 'run', side_effect=fake_run):
+            with self.assertRaisesRegex(ops.PdfToolError, 'demorou'):
+                sources._run_powershell('script', self.tmp / 'a.docx', temp)
+        self.assertEqual([command[2] for command in killed], ['111', '222'])
+        self.assertFalse(pids.exists())
+
+    def test_utf16_text_files_are_read_correctly(self):
+        from rdf.pdftools import sources
+
+        path = self.tmp / 'unicode.txt'
+        path.write_bytes('Relatório de ação\n'.encode('utf-16'))  # com a marca, como o Bloco de Notas grava
+        document = sources._text_document(path)
+        try:
+            text = document[0].get_text()
+        finally:
+            document.close()
+        self.assertIn('Relatório de ação', text)
+        self.assertNotIn('\x00', text)
+
+    def test_document_names_keep_their_accents(self):
+        from rdf.core.naming import compose_document_filename
+
+        self.assertEqual(
+            compose_document_filename('Maria José Conceição.pdf', 'Atestado'), 'MARIA JOSÉ CONCEIÇÃO - ATESTADO.PDF'
+        )
+        self.assertEqual(compose_document_filename('79441 - DECLARAÇÃO.pdf', 'Declaração'), '79441 - DECLARAÇÃO.PDF')
+
+    def test_the_launcher_marks_a_finished_install_and_retries_a_failed_one(self):
+        from _source import ROOT
+
+        text = (ROOT / 'Iniciar RDF.bat').read_text(encoding='utf-8')
+        self.assertIn('fc /b "requirements.txt" "%MARCA%"', text)
+        install = text.index('pip install -r requirements.txt')
+        mark = text.index('copy /y "requirements.txt" "%MARCA%"')
+        self.assertLess(install, mark)  # a marca só vem depois de o pip terminar bem
+        self.assertIn('if errorlevel 1 goto ERRO', text[install:mark])
+        self.assertNotIn('3.10', text)
+
+
+@unittest.skipUnless(HAS_QT, 'PySide6 não instalado')
+class MergePrintTests(TempCase):
+    def test_files_arriving_while_printing_wait_and_the_list_is_a_snapshot(self):
+        from rdf.core import settings
+        from rdf.qt.__main__ import create_app
+        from rdf.qt.window import MainWindow
+
+        create_app([])
+        settings.reset()
+        patch = mock.patch.object(config, 'CONVERT_DIR', self.tmp / 'conv')
+        patch.start()
+        self.addCleanup(patch.stop)
+        window = MainWindow()
+        self.addCleanup(window.deleteLater)
+        page = window.open_tool('merge')
+        first, second = make_pdf(self.tmp / 'a.pdf'), make_pdf(self.tmp / 'b.pdf')
+        page.add_paths([first])
+        seen = {}
+
+        def dialog_exec():
+            seen['running'] = page.running
+            with mock.patch.object(window, 'show_notice') as notice:
+                seen['accepted'] = window.open_print_with([second])  # chega um arquivo do botão direito
+            seen['notice'] = notice.called
+            return False  # o usuário cancela a impressão
+
+        dialog = mock.Mock()
+        dialog.exec.side_effect = dialog_exec
+        with mock.patch.object(page, 'make_print_dialog', return_value=dialog):
+            page.print_files()
+        self.assertTrue(seen['running'])
+        self.assertFalse(seen['accepted'])
+        self.assertTrue(seen['notice'])
+        self.assertEqual(page.files, [first])
+        self.assertFalse(page.running)
+        self.assertTrue(page.print_button.isEnabled())
+
+    def test_conversions_run_off_the_window_thread(self):
+        import threading
+
+        from rdf.core import settings
+        from rdf.qt.__main__ import create_app
+        from rdf.qt.window import MainWindow
+
+        create_app([])
+        settings.reset()
+        window = MainWindow()
+        self.addCleanup(window.deleteLater)
+        page = window.open_tool('merge')
+        threads = []
+        result = page.in_background(lambda: threads.append(threading.current_thread()) or 'pronto')
+        self.assertEqual(result, 'pronto')
+        self.assertIsNot(threads[0], threading.main_thread())
+        with self.assertRaises(ValueError):
+            page.in_background(lambda: (_ for _ in ()).throw(ValueError('falhou')))

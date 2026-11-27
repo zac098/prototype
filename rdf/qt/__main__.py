@@ -2,6 +2,7 @@
 
 import sys
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
@@ -27,6 +28,26 @@ def create_app(argv=None):
     return app
 
 
+TRAY_WAIT_SECONDS = 45  # no login, a área de notificação do Windows pode demorar a aparecer
+
+
+def wait_for_tray(window, seconds=TRAY_WAIT_SECONDS, interval_ms=1000):
+    """Início automático sem bandeja ainda: espera ela aparecer (logo depois do login o Explorer pode não estar
+    pronto). Se aparecer, o RDF fica escondido nela, como pedido; se não, mostra a janela, o único jeito de voltar."""
+
+    def check(remaining):
+        if window.tray is not None:
+            return
+        if TrayController.available():
+            window.attach_tray(TrayController(window))
+        elif remaining <= 0:
+            window.show()
+        else:
+            QTimer.singleShot(interval_ms, window, lambda: check(remaining - 1))
+
+    check(seconds)
+
+
 def main(argv=None):
     argv = list(sys.argv if argv is None else argv)
     app = create_app(argv)
@@ -50,8 +71,10 @@ def main(argv=None):
     tray = TrayController(window) if TrayController.available() else None
     window.attach_tray(tray)
     server.filesReceived.connect(window.receive_print_files)
-    if files or not (background and tray is not None):  # sem bandeja não há como reabrir: mostra a janela
+    if files or not background:
         window.show()
+    elif tray is None:  # início automático antes de a bandeja existir: espera por ela antes de mostrar a janela
+        wait_for_tray(window)
     if files:
         window.receive_print_files(files)
     return app.exec()

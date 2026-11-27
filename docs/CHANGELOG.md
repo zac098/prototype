@@ -31,6 +31,12 @@
 - TIFF com vários quadros conta cada quadro no limite de páginas do lote.
 - Sair do renomeador com uma análise ainda terminando não mostra mais um aviso indevido nem impede o app de fechar, e as cópias temporárias são apagadas quando ela termina.
 - Erros inesperados não somem mais calados: vão para o log e aparecem num aviso com o caminho dele.
+- Documentos do Office: um arquivo com senha falha na hora (antes esperava 180 s por uma janela de senha escondida); se o Office travar, os processos que o RDF abriu são fechados; uma apresentação ou documento que o usuário abrir durante a conversão nunca é fechado à força; o PowerPoint também abre com as macros desligadas; o "Office ocupado" 0x8001010A é repetido em vez de falhar.
+- Textos em UTF-16 (o "Unicode" do Bloco de Notas e do Excel) são convertidos corretamente, sem letras trocadas.
+- "Imprimir…" em Unir PDF converte os documentos do Office sem congelar a janela, e arquivos que chegam do botão direito no meio da preparação não entram na impressão em curso.
+- `Iniciar RDF.bat`: se a primeira instalação falhar no meio, a próxima abertura tenta de novo (antes ficava quebrado para sempre), e uma versão nova com outras bibliotecas instala o que falta.
+- Início automático: se a bandeja do Windows ainda não existir logo depois do login, o RDF espera por ela em vez de abrir a janela sem ninguém pedir.
+- Nomes de atestados e declarações mantêm os acentos ("MARIA JOSÉ - ATESTADO").
 - O mínimo passa a ser o **Python 3.11** (o Pillow fixado não instala no 3.10, que o projeto dizia aceitar); `Iniciar RDF.bat` e o build deixam de procurar o 3.10.
 - Preferências do usuário em `preferencias.json` (só escolhas de uso, nada dos documentos), gravadas sem nunca ficar pela metade.
 - CI também no Linux com o Python mínimo; regras extras do ruff (bugbear, pyupgrade); a suíte de testes caiu de 145 s para cerca de 80 s mesmo com mais de 100 testes novos.
