@@ -81,6 +81,13 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(prefs.get('favorites'), ['merge'])
         self.assertEqual(prefs.get('recent'), ['split'])
 
+    def test_the_last_folder_never_goes_to_the_file(self):
+        prefs = settings.load(self.file)
+        prefs.set('last_folder', r'C:\Folhas\Maria Fictícia 12345')
+        self.assertNotIn('last_folder', json.loads(self.file.read_text(encoding='utf-8')))
+        self.file.write_text(json.dumps({'last_folder': r'C:\outra'}), encoding='utf-8')
+        self.assertEqual(settings.load(self.file).get('last_folder'), '')  # nem é lido de um arquivo editado
+
     def test_lists_returned_are_copies(self):
         prefs = settings.reset()
         prefs.get('favorites').append('x')

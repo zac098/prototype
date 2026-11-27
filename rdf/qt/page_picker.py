@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from rdf.pdftools.pages import PageRangeError, format_page_ranges, parse_page_ranges
+from rdf.qt import theme
 from rdf.qt.theme import COLORS, FONT_FAMILY
 from rdf.qt.thumbnails import ThumbnailLoader
 
@@ -149,8 +150,10 @@ class PagePicker(QWidget):
         self.message.hide()
         layout.addWidget(self.message)
 
+        self._by_page = {}  # página -> miniaturas dela (para achar a certa sem percorrer a grade toda)
         self.loader = ThumbnailLoader(self)
         self.loader.ready.connect(self._on_image)
+        theme.manager().changed.connect(self.repaint_badges)
         self.loader.failed.connect(lambda _path, reason: self.show_message(f'Miniaturas indisponíveis: {reason}'))
 
     def _default_hint(self):
@@ -176,6 +179,7 @@ class PagePicker(QWidget):
                 self.grid.addItem(self._make_item(index))
         finally:
             self._syncing = False
+        self._reindex()
         self.loader.request(self.path, range(self.total), THUMB.width() * 2, THUMB.height() * 2)
 
     def clear(self, message=''):
@@ -187,6 +191,7 @@ class PagePicker(QWidget):
             self.grid.clear()
         finally:
             self._syncing = False
+        self._by_page = {}
         self.show_message(message)
 
     def show_message(self, text):
@@ -208,14 +213,24 @@ class PagePicker(QWidget):
     def items(self):
         return [self.grid.item(row) for row in range(self.grid.count())]
 
+    def _reindex(self):
+        self._by_page = {}
+        for item in self.items():
+            self._by_page.setdefault(item.data(PAGE_ROLE), []).append(item)
+
     def _on_image(self, path, index, image):
         if path != self.path:
             return
         self.images[index] = QImage(image)
         icon = QIcon(_badge(self.images[index], index + 1, index in self._marked))
+        for item in self._by_page.get(index, ()):
+            item.setIcon(icon)
+
+    def repaint_badges(self, *_args):
+        """O tema mudou: os números das páginas são redesenhados nas cores novas."""
         for item in self.items():
-            if item.data(PAGE_ROLE) == index:
-                item.setIcon(icon)
+            index = item.data(PAGE_ROLE)
+            item.setIcon(QIcon(_badge(self.images.get(index), index + 1, index in self._marked)))
 
     # ---- escolha -------------------------------------------------------------------------
     def selected_pages(self):
@@ -267,6 +282,7 @@ class PagePicker(QWidget):
                 self.grid.clear()
                 for index in pages:
                     self.grid.addItem(self._make_item(index))
+                self._reindex()
         finally:
             self._syncing = False
         if self.marks_removal:
@@ -305,6 +321,7 @@ class PagePicker(QWidget):
             item = self._make_item(index)
             self.grid.addItem(item)
             item.setSelected(position in selected)
+        self._reindex()
 
     def _move_selected(self, step):
         rows = sorted(self.grid.row(item) for item in self.grid.selectedItems())

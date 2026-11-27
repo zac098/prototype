@@ -274,3 +274,134 @@ class RetiredRenamerTests(TempCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SecondReviewTests(TempCase):
+    def test_layout_text_keeps_the_columns_of_a_table(self):
+        source = self.tmp / 'tabela.pdf'
+        document = fitz.open()
+        page = document.new_page()
+        for row, (name, value) in enumerate((('Nome', 'Valor'), ('Ana', '10'), ('Bruno', '2000'))):
+            page.insert_text((72, 100 + row * 20), name, fontsize=11)
+            page.insert_text((300, 100 + row * 20), value, fontsize=11)
+        document.save(source)
+        document.close()
+        dest = self.tmp / 'tabela.txt'
+        ops.pdf_to_text(source, dest, 'Manter a disposição')
+        lines = [
+            line for line in dest.read_text(encoding='utf-8-sig').splitlines() if line.strip() and '=====' not in line
+        ]
+        columns = {line.index(value) for line, value in zip(lines, ('Valor', '10', '2000'))}
+        self.assertEqual(len(columns), 1, lines)  # os valores começam na mesma coluna
+        self.assertGreater(columns.pop(), 20)
+
+    def test_a_typed_name_with_accents_is_found_whatever_the_case(self):
+        source = self.tmp / 'nome.pdf'
+        document = fitz.open()
+        document.new_page().insert_text((72, 72), 'Paciente: JOÃO DA SILVA', fontsize=12)
+        document.save(source)
+        document.close()
+        dest = self.tmp / 'saida.pdf'
+        result = ops.redact_pdf(source, dest, 'joão da silva', cpf=False)
+        with fitz.open(dest) as output:
+            self.assertNotIn('JOÃO', output[0].get_text())
+        self.assertNotIn('não puderam ser localizados', result.message)
+
+    def test_comments_bookmarks_and_metadata_with_the_data_are_cleaned(self):
+        source = self.tmp / 'extras.pdf'
+        document = fitz.open()
+        page = document.new_page()
+        page.insert_text((72, 72), 'CPF 123.456.789-09', fontsize=12)
+        page.add_text_annot((300, 300), 'Lembrete: CPF 123.456.789-09')
+        page.add_text_annot((300, 400), 'Comentário sem dados')
+        document.set_toc([[1, 'Ficha 123.456.789-09', 1]])
+        document.set_metadata({'title': 'Contrato CPF 123.456.789-09'})
+        document.save(source)
+        document.close()
+        dest = self.tmp / 'saida.pdf'
+        result = ops.redact_pdf(source, dest)
+        with fitz.open(dest) as output:
+            notes = [annot.info['content'] for annot in output[0].annots()]
+            self.assertEqual(notes, ['Comentário sem dados'])
+            self.assertEqual(output.get_toc()[0][1], '[tarjado]')
+            self.assertFalse(output.metadata.get('title'))
+        self.assertNotIn(b'123.456.789-09', dest.read_bytes())
+        self.assertIn('Também limpos: 2', result.message)
+
+    def test_scanned_pages_in_a_mixed_pdf_are_reported(self):
+        source = self.tmp / 'misto.pdf'
+        document = fitz.open()
+        document.new_page().insert_text((72, 72), 'CPF 123.456.789-09')
+        document.new_page()  # sem texto, como uma página escaneada
+        document.save(source)
+        document.close()
+        result = ops.redact_pdf(source, self.tmp / 'saida.pdf')
+        self.assertIn('página(s) 2 sem texto', result.message)
+
+    def test_an_emptied_metadata_field_is_removed(self):
+        source = self.tmp / 'meta.pdf'
+        document = fitz.open()
+        document.new_page()
+        document.set_metadata({'title': 'Manter', 'author': 'Autor Fictício'})
+        document.save(source)
+        document.close()
+        dest = self.tmp / 'saida.pdf'
+        result = ops.edit_metadata(source, dest, 'Editar', title='Manter', clear=('author', 'subject'))
+        with fitz.open(dest) as output:
+            self.assertEqual(output.metadata['title'], 'Manter')
+            self.assertFalse(output.metadata['author'])
+        self.assertIn('apagado: autor', result.message)
+
+    def test_the_lock_can_be_let_go_during_slow_work_and_taken_back(self):
+        from rdf.core.fitz_lock import released
+
+        with FITZ_LOCK, FITZ_LOCK:
+            with released():
+                self.assertFalse(FITZ_LOCK._is_owned())
+            self.assertTrue(FITZ_LOCK._is_owned())
+        with released():  # sem a trava, não faz nada
+            self.assertFalse(FITZ_LOCK._is_owned())
+
+
+@unittest.skipUnless(HAS_QT, 'PySide6 não instalado')
+class SecondReviewQtTests(TempCase):
+    def setUp(self):
+        super().setUp()
+        from rdf.core import settings
+        from rdf.qt.__main__ import create_app
+        from rdf.qt.window import MainWindow
+
+        self.app = create_app([])
+        settings.reset()
+        self.window = MainWindow()
+        self.addCleanup(self.window.deleteLater)
+
+    def test_enter_in_an_empty_search_opens_nothing(self):
+        self.window.home.open_first()
+        self.assertIsNone(self.window.current_id)
+
+    def test_the_metadata_page_clears_a_field_the_user_emptied(self):
+        source = self.tmp / 'meta.pdf'
+        document = fitz.open()
+        document.new_page()
+        document.set_metadata({'title': 'T', 'author': 'Autor Fictício'})
+        document.save(source)
+        document.close()
+        page = self.window.open_tool('metadata')
+        page.add_paths([str(source)])
+        page.widgets['author'].setText('')
+        values = page.extra_values({'title': 'T', 'author': '', 'subject': '', 'keywords': ''})
+        self.assertEqual(values['clear'], ['author'])
+
+    def test_thumbnail_badges_follow_the_theme(self):
+        from rdf.qt import theme
+
+        page = self.window.open_tool('remove')
+        page.add_paths([make_pdf(self.tmp / 'tres.pdf', 3)])
+        with mock.patch.object(page.picker, 'repaint_badges') as repaint:
+            page.picker.repaint_badges()  # chamada direta continua funcionando
+            repaint.reset_mock()
+        before = page.picker.grid.item(0).icon().cacheKey()
+        theme.apply(None, 'escuro')
+        self.addCleanup(theme.apply, None, 'claro')
+        self.assertNotEqual(page.picker.grid.item(0).icon().cacheKey(), before)

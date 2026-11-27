@@ -24,11 +24,11 @@ DEFAULTS = {
     'favorites': [],  # ids das ferramentas marcadas com estrela, na ordem em que foram marcadas
     'recent': [],  # ids das ferramentas usadas, da mais recente para a mais antiga
     'open_folder_after': False,  # abrir a pasta do resultado ao terminar uma ferramenta
-    'confirm_overwrite': True,  # perguntar antes de salvar por cima de um arquivo existente
     'window_geometry': '',  # tamanho e posição da janela (base64 do Qt)
-    'last_folder': '',  # a última pasta usada nas janelas de escolher arquivos
-    'seen_version': '',  # versão em que o usuário viu as novidades
+    'last_folder': '',  # a última pasta usada nas janelas de escolher arquivos (só na memória: ver TRANSIENT)
 }
+# Só na memória, nunca no arquivo: o nome de uma pasta pode ter o nome ou a matrícula de alguém.
+TRANSIENT = frozenset({'last_folder'})
 
 
 def _valid_ids(value, limit=None):
@@ -64,7 +64,7 @@ class Settings:
         self.path = Path(path) if path else None
         self._data = {key: (list(value) if isinstance(value, list) else value) for key, value in DEFAULTS.items()}
         for key, value in (data or {}).items():
-            if key in DEFAULTS:
+            if key in DEFAULTS and not (path and key in TRANSIENT):  # do arquivo, nunca o que é só da sessão
                 cleaned = _clean(key, value)
                 if cleaned is not None:
                     self._data[key] = cleaned
@@ -102,6 +102,10 @@ class Settings:
     def as_dict(self):
         return {key: self.get(key) for key in DEFAULTS}
 
+    def persisted(self):
+        """O que vai para o arquivo: tudo menos o que é só da sessão (TRANSIENT)."""
+        return {key: value for key, value in self.as_dict().items() if key not in TRANSIENT}
+
     def save(self):
         """Grava sem nunca deixar o arquivo pela metade. True se gravou (sem caminho, não grava)."""
         if self.path is None:
@@ -109,7 +113,7 @@ class Settings:
         temp = self.path.with_suffix('.tmp')
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            temp.write_text(json.dumps({'version': 1, **self.as_dict()}, ensure_ascii=False, indent=2), 'utf-8')
+            temp.write_text(json.dumps({'version': 1, **self.persisted()}, ensure_ascii=False, indent=2), 'utf-8')
             os.replace(temp, self.path)
             return True
         except OSError:

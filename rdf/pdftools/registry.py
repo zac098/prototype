@@ -166,7 +166,9 @@ def _run_redact(source, dest, o, progress):
 
 def _run_metadata(source, dest, o, progress):
     mode = 'Remover' if o['mode'].startswith('Remover') else 'Editar'
-    return ops.edit_metadata(source, dest, mode, o['title'], o['author'], o['subject'], o['keywords'], progress)
+    return ops.edit_metadata(
+        source, dest, mode, o['title'], o['author'], o['subject'], o['keywords'], o.get('clear', ()), progress
+    )
 
 
 def _run_pdf_to_text(source, dest, o, progress):
@@ -625,7 +627,7 @@ TOOLS = (
                 'Palavras-chave',
                 'text',
                 '',
-                help='Campos em branco ficam como estão.',
+                help='Os campos mostram o que está gravado no arquivo. Apague o texto de um campo para remover essa informação.',
                 visible_if=('mode', 'Editar informações'),
             ),
         ),

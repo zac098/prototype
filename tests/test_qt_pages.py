@@ -222,7 +222,7 @@ class ResultTests(PageTestCase):
             self.run_compress(page)
         opened.assert_called_once_with(self.tmp)
 
-    def test_the_last_folder_is_remembered_between_sessions(self):
+    def test_the_last_folder_is_remembered_while_the_app_is_open(self):
         page = self.window.open_tool('compress')
         chosen = str(make_pdf(self.tmp / 'pasta' / 'a.pdf'))
         with mock.patch('rdf.qt.tool_page.QFileDialog.getOpenFileNames', return_value=([chosen], '')) as dialog:
@@ -230,6 +230,7 @@ class ResultTests(PageTestCase):
             page.add_dialog()
         self.assertEqual(self.prefs.get('last_folder'), str(self.tmp / 'pasta'))
         self.assertEqual(dialog.call_args_list[1].args[2], str(self.tmp / 'pasta'))
+        self.assertNotIn('last_folder', self.prefs.persisted())  # o nome da pasta pode identificar alguém
 
 
 class LoaderTests(PageTestCase):

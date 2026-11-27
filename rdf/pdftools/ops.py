@@ -16,7 +16,7 @@ from pathlib import Path
 import fitz
 from PIL import Image, ImageOps, ImageSequence
 
-from rdf.core.fitz_lock import FITZ_LOCK
+from rdf.core.fitz_lock import FITZ_LOCK, released
 from rdf.pdftools.pages import PageRangeError, parse_page_groups, parse_page_ranges
 
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp', '.gif'}
@@ -332,9 +332,10 @@ def ocr_pdf(source, dest, language='Português + Inglês', dpi=200, progress=_no
                 pixmap = page.get_pixmap(dpi=int(dpi))
                 picture = Image.frombytes('RGB', (pixmap.width, pixmap.height), pixmap.samples)
                 try:
-                    data = pytesseract.image_to_pdf_or_hocr(
-                        picture, lang=lang, extension='pdf', timeout=OCR_PAGE_TIMEOUT
-                    )
+                    with released():  # o Tesseract não usa o PyMuPDF: a prévia e o resto do app seguem livres
+                        data = pytesseract.image_to_pdf_or_hocr(
+                            picture, lang=lang, extension='pdf', timeout=OCR_PAGE_TIMEOUT
+                        )
                 except pytesseract.TesseractNotFoundError as exc:
                     raise PdfToolError(
                         'O Tesseract OCR não foi encontrado. Instale-o para usar esta ferramenta.'
@@ -474,6 +475,33 @@ def pdf_to_images(source, out_dir, mode='Páginas como imagens', image_format='J
     return Result(created, f'{len(created)} imagens criadas.')
 
 
+def _layout_text(page):
+    """O texto com as palavras na coluna em que aparecem na página (como "pdftotext -layout"): cada linha da página
+    vira uma linha de texto, e o espaço entre as palavras acompanha a distância entre elas. Bom para tabelas."""
+    words = page.get_text('words', sort=True)
+    if not words:
+        return ''
+    widths = sorted((x1 - x0) / max(1, len(word)) for x0, _y0, x1, _y1, word, *_rest in words if word.strip())
+    char_width = max(1.0, widths[len(widths) // 2]) if widths else 5.0
+    lines = []
+    for word in sorted(words, key=lambda item: ((item[1] + item[3]) / 2, item[0])):
+        middle = (word[1] + word[3]) / 2
+        height = max(1.0, word[3] - word[1])
+        if lines and abs(lines[-1][0] - middle) <= height * 0.5:
+            lines[-1][1].append(word)
+        else:
+            lines.append([middle, [word]])
+    left = min(word[0] for word in words)
+    rendered = []
+    for _middle, items in lines:
+        text = ''
+        for x0, _y0, _x1, _y1, word, *_rest in sorted(items, key=lambda item: item[0]):
+            column = int(round((x0 - left) / char_width))
+            text += ' ' * max(1 if text else 0, column - len(text)) + word
+        rendered.append(text.rstrip())
+    return '\n'.join(rendered)
+
+
 def pdf_to_text(source, dest, layout='Texto corrido', progress=_noop):
     """Grava o texto do PDF num arquivo .txt (UTF-8), com um separador por página.
 
@@ -484,10 +512,7 @@ def pdf_to_text(source, dest, layout='Texto corrido', progress=_noop):
         total = document.page_count
         for number, page in enumerate(document):
             progress(number / total, f'Lendo o texto da página {number + 1} de {total}')
-            if layout == 'Manter a disposição':
-                text = page.get_text('text', sort=True, flags=fitz.TEXT_PRESERVE_WHITESPACE)
-            else:
-                text = page.get_text('text', sort=True)
+            text = _layout_text(page) if layout == 'Manter a disposição' else page.get_text('text', sort=True)
             pages.append(text.rstrip())
     if not any(text.strip() for text in pages):
         raise PdfToolError(
@@ -820,10 +845,11 @@ def read_metadata(path):
     return info
 
 
-def edit_metadata(source, dest, mode='Editar', title='', author='', subject='', keywords='', progress=_noop):
+def edit_metadata(source, dest, mode='Editar', title='', author='', subject='', keywords='', clear=(), progress=_noop):
     """Edita ou remove as informações do documento (título, autor, programa que criou, datas...).
 
-    "Editar": os campos preenchidos substituem os atuais; os deixados em branco ficam como estão.
+    "Editar": os campos preenchidos substituem os atuais; os deixados em branco ficam como estão, menos os listados
+    em clear, que são apagados (a tela que mostra os valores atuais apaga o campo que o usuário esvaziou).
     "Remover": apaga as informações, os metadados XMP, scripts, anexos e miniaturas; o conteúdo das páginas (inclusive
     o texto invisível de um PDF com OCR) não muda."""
     with edit_pdf(source, dest) as (document, temp):
@@ -847,13 +873,21 @@ def edit_metadata(source, dest, mode='Editar', title='', author='', subject='', 
         else:
             values = {'title': title, 'author': author, 'subject': subject, 'keywords': keywords}
             changes = {key: str(value).strip() for key, value in values.items() if str(value or '').strip()}
-            if not changes:
-                raise PdfToolError('Preencha pelo menos um campo para alterar (os vazios ficam como estão).')
             metadata = dict(document.metadata or {})
+            cleared = {key for key in clear if key in values and key not in changes and metadata.get(key)}
+            if not changes and not cleared:
+                raise PdfToolError('Preencha pelo menos um campo para alterar (os vazios ficam como estão).')
             metadata.update(changes)
+            metadata.update(dict.fromkeys(cleared, ''))
             document.set_metadata(metadata)
-            names = ', '.join(label.lower() for key, label in METADATA_FIELDS if key in changes)
-            message = f'Informações atualizadas: {names}.'
+            parts = []
+            if changes:
+                parts.append(
+                    'atualizado: ' + ', '.join(label.lower() for key, label in METADATA_FIELDS if key in changes)
+                )
+            if cleared:
+                parts.append('apagado: ' + ', '.join(label.lower() for key, label in METADATA_FIELDS if key in cleared))
+            message = 'Informações do documento ' + '; '.join(parts) + '.'
         _save(document, temp)
     return Result([Path(dest)], message)
 
@@ -866,16 +900,57 @@ REDACTION_PATTERNS = {
 }
 
 
+REDACTION_TEXT_FLAGS = (
+    fitz.TEXT_DEHYPHENATE | fitz.TEXT_PRESERVE_WHITESPACE | fitz.TEXT_MEDIABOX_CLIP
+)  # ligaduras abertas
+
+
 def _redaction_terms(text, terms, patterns):
-    """Os trechos do texto da página que devem ser tarjados: os termos digitados e o que casa com os padrões."""
+    """Os trechos do texto que devem ser tarjados, como aparecem nele: os termos digitados (sem diferença de
+    maiúsculas, inclusive com acento) e o que casa com os padrões (CPF, e-mail...).
+
+    Devolve o trecho exato da página ("JOÃO DA SILVA", mesmo que digitado "joão da silva"): a busca de posição do
+    PyMuPDF só ignora maiúsculas em letras sem acento."""
     found = set()
     flat = ' '.join(text.split())
     for term in terms:
-        if term and term.casefold() in flat.casefold():
-            found.add(term)
+        words = term.split()
+        if not words:
+            continue
+        pattern = r'\s+'.join(re.escape(word) for word in words)
+        found.update(match.group(0) for match in re.finditer(pattern, flat, re.IGNORECASE))
     for key in patterns:
         found.update(match.group(0) for match in re.finditer(REDACTION_PATTERNS[key][1], flat))
     return found
+
+
+def _scrub_extras(document, wanted, patterns):
+    """Fora do texto das páginas: comentários e notas, valores de formulário e marcadores com os mesmos dados.
+    Devolve quantos foram limpos."""
+    cleaned = 0
+    for page in document:
+        for annot in list(page.annots() or []):
+            info = annot.info or {}
+            text = ' '.join(str(info.get(key) or '') for key in ('content', 'title', 'subject'))
+            if annot.type[0] != fitz.PDF_ANNOT_REDACT and _redaction_terms(text, wanted, patterns):
+                page.delete_annot(annot)
+                cleaned += 1
+        for widget in list(page.widgets() or []):
+            value = str(widget.field_value or '')
+            if value and _redaction_terms(value, wanted, patterns):
+                widget.field_value = ''
+                widget.update()
+                cleaned += 1
+    toc = document.get_toc(simple=False)
+    changed = False
+    for entry in toc:
+        if _redaction_terms(entry[1], wanted, patterns):
+            entry[1] = '[tarjado]'
+            changed = True
+            cleaned += 1
+    if changed:
+        document.set_toc(toc)
+    return cleaned
 
 
 def redact_pdf(source, dest, terms='', cpf=True, cnpj=False, email=False, phone=False, progress=_noop):
@@ -888,17 +963,20 @@ def redact_pdf(source, dest, terms='', cpf=True, cnpj=False, email=False, phone=
     if not wanted and not patterns:
         raise PdfToolError('Digite o que tarjar ou marque pelo menos um tipo de dado (CPF, e-mail...).')
     count = pages_hit = 0
-    has_text = False
+    without_text, not_located = [], 0
     with edit_pdf(source, dest) as (document, temp):
         total = document.page_count
         for number, page in enumerate(document):
             progress(0.9 * number / total, f'Procurando na página {number + 1} de {total}')
-            text = page.get_text('text')
-            if text.strip():
-                has_text = True
+            text = page.get_text('text', flags=REDACTION_TEXT_FLAGS)
+            if not text.strip():
+                without_text.append(number + 1)
+                continue
             areas = []
             for snippet in _redaction_terms(text, wanted, patterns):
-                areas.extend(page.search_for(snippet))
+                found = page.search_for(snippet, flags=REDACTION_TEXT_FLAGS)
+                not_located += not found
+                areas.extend(found)
             if not areas:
                 continue
             for area in areas:
@@ -906,17 +984,28 @@ def redact_pdf(source, dest, terms='', cpf=True, cnpj=False, email=False, phone=
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
             count += len(areas)
             pages_hit += 1
-        if not has_text:
+        if len(without_text) == total:
             raise PdfToolError(
                 f'"{Path(source).name}" não tem texto pesquisável (parece escaneado). '
                 'Use antes "OCR - PDF pesquisável" e depois tarje o resultado.'
             )
-        if not count:
+        extras = _scrub_extras(document, wanted, patterns)
+        if not count and not extras:
             raise PdfToolError('Nada encontrado para tarjar: nenhum dos termos ou tipos de dado aparece no PDF.')
+        # Título, autor e metadados XMP podem repetir os mesmos dados: num PDF tarjado para compartilhar, saem todos.
+        document.set_metadata({})
+        document.del_xml_metadata()
         progress(0.95, 'Gravando o PDF')
         document.save(temp, garbage=4, deflate=True, clean=True)  # garbage=4 descarta de vez o que foi apagado
     noun = 'trecho tarjado' if count == 1 else 'trechos tarjados'
     where = 'página' if pages_hit == 1 else 'páginas'
-    return Result(
-        [Path(dest)], f'{count} {noun} em {pages_hit} {where}. O conteúdo sob a tarja foi apagado do arquivo.'
-    )
+    message = f'{count} {noun} em {pages_hit} {where}; o conteúdo sob a tarja foi apagado do arquivo.'
+    if extras:
+        message += f' Também limpos: {extras} comentário(s), campo(s) ou marcador(es).'
+    message += ' As informações do documento (título, autor) foram removidas.'
+    if without_text:
+        pages = ', '.join(map(str, without_text[:8])) + ('…' if len(without_text) > 8 else '')
+        message += f' Atenção: página(s) {pages} sem texto (escaneadas) não foram verificadas; use o OCR antes.'
+    if not_located:
+        message += f' Atenção: {not_located} trecho(s) encontrado(s) no texto não puderam ser localizados na página.'
+    return Result([Path(dest)], message)

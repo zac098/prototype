@@ -7,10 +7,10 @@
 - **Tela inicial nova**: barra com a marca, a versão, a busca e os botões de tema, configurações e ajuda; **favoritas** (estrela em cada ferramenta ou Ctrl+D) e **usadas recentemente** no topo; filtros por categoria; selo "Novo" nas ferramentas desta versão.
 - **Busca melhor**: não diferencia acentos nem maiúsculas ("numeros" acha "Números"), acha por começo de palavra e mostra primeiro o mais relevante. Enter abre o primeiro resultado; as setas andam entre as ferramentas.
 - **Configurações** (Ctrl+,): tema, abrir a pasta do resultado ao terminar, iniciar com o Windows, situação do Tesseract e pasta de dados. **Sobre** com as versões dos componentes e **lista de atalhos** (F1).
-- A janela volta com o **tamanho e a posição** da última vez, e as janelas de escolher arquivos lembram a última pasta mesmo depois de fechar o app.
+- A janela volta com o **tamanho e a posição** da última vez. As janelas de escolher arquivos lembram a última pasta enquanto o app está aberto (o nome da pasta não é gravado em disco: pode ter o nome ou a matrícula de alguém).
 
 ### Ferramentas de PDF
-- Novas: **Tarjar dados (LGPD)** (apaga de verdade CPF, CNPJ, e-mail, telefone e textos digitados; o texto sai do arquivo e a imagem embaixo fica preta), **Metadados do PDF** (mostra autor, programa e datas, edita ou remove tudo), **PDF para texto** (.txt), **Escala de cinza**, **Várias páginas por folha** (2, 4, 6 ou 9) e **Ajustar tamanho do papel** (A4, Carta, Ofício, A3).
+- Novas: **Tarjar dados (LGPD)** (apaga de verdade CPF, CNPJ, e-mail, telefone e textos digitados, com ou sem acento e em qualquer caixa; o texto sai do arquivo e a imagem embaixo fica preta; comentários, campos de formulário, marcadores e as informações do documento com os mesmos dados também são limpos, e páginas escaneadas sem texto são avisadas), **Metadados do PDF** (mostra autor, programa e datas; edite, apague um campo esvaziando-o, ou remova tudo), **PDF para texto** (.txt, em texto corrido ou mantendo as colunas de tabelas), **Escala de cinza**, **Várias páginas por folha** (2, 4, 6 ou 9) e **Ajustar tamanho do papel** (A4, Carta, Ofício, A3).
 - **Miniaturas das páginas** em Remover, Extrair e Organizar páginas: clicar nas miniaturas preenche o campo de páginas (e vice-versa), com atalhos para todas, nenhuma, ímpares e pares; em Organizar, arrastar muda a ordem. Em Remover, as páginas marcadas ficam com o número em vermelho.
 - Em Unir e Imagem para PDF, **arrastar os arquivos na lista** muda a ordem, e "A→Z" ordena por nome do jeito humano ("folha 2" antes de "folha 10").
 - A prévia e as miniaturas são desenhadas em segundo plano: a janela não trava abrindo um PDF grande.
@@ -23,7 +23,13 @@
 
 ### Correções e código
 - O PyMuPDF não aceita duas threads ao mesmo tempo: as ferramentas, a prévia, as miniaturas e a impressão passam a usar a mesma trava que o renomeador já usava.
-- Exportação do renomeador: cada destino planejado é conferido (a checagem anterior podia pular caminhos).
+- Exportação do renomeador: cada destino planejado é conferido (a checagem anterior podia pular caminhos), e exportar em imagem nunca sobrescreve um arquivo que surgiu no meio.
+- Trocar as opções de nome ou o formato não transforma mais arquivos não reconhecidos ou pendentes em "REVISAR" (passavam a ser exportados com o nome original). Corrigir os dados de um "atestado" o transforma em folha de ponto, em vez de mandá-lo para a subpasta Atestados.
+- Impressão: a margem da impressora era contada duas vezes, empurrando a página e cortando a direita e o rodapé.
+- Cortar margens de um PDF já cortado corta mais, em vez de trazer de volta o que tinha sido cortado.
+- OCR: uma leitura boa não perde mais para uma fraca só porque a fraca achou o mês.
+- TIFF com vários quadros conta cada quadro no limite de páginas do lote.
+- Sair do renomeador com uma análise ainda terminando não mostra mais um aviso indevido nem impede o app de fechar, e as cópias temporárias são apagadas quando ela termina.
 - Erros inesperados não somem mais calados: vão para o log e aparecem num aviso com o caminho dele.
 - O mínimo passa a ser o **Python 3.11** (o Pillow fixado não instala no 3.10, que o projeto dizia aceitar); `Iniciar RDF.bat` e o build deixam de procurar o 3.10.
 - Preferências do usuário em `preferencias.json` (só escolhas de uso, nada dos documentos), gravadas sem nunca ficar pela metade.

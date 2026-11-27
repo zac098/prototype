@@ -302,7 +302,8 @@ class HomePage(QWidget):
 
     # ---- teclado -------------------------------------------------------------------------
     def open_first(self):
-        if self.cards:
+        """Enter na busca: abre o resultado mais relevante (sem nada digitado, não abre nada)."""
+        if self.query and self.cards:
             self.toolRequested.emit(self.cards[0].tool.id)
 
     def focus_first(self):

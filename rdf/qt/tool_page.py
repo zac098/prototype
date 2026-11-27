@@ -874,10 +874,15 @@ class ToolPage(QWidget):
         except ops.PdfToolError as exc:
             self.set_message(str(exc), 'error')
             return
+        values = self.extra_values(values)
         job_list = self.ask_destination()
         if not job_list:
             return
         self.start_worker(job_list, values)
+
+    def extra_values(self, values):
+        """Valores que uma tela própria acrescenta aos das opções antes de executar (a padrão não muda nada)."""
+        return values
 
     def on_run_clicked(self):
         if self.running:

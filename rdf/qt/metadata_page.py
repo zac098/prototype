@@ -42,6 +42,12 @@ class MetadataPage(ToolPage):
         if hasattr(self, 'info_label'):
             self.show_metadata()
 
+    def extra_values(self, values):
+        """Campo que tinha valor e foi esvaziado: o usuário quer apagar essa informação (não "deixar como está")."""
+        current = getattr(self, 'current', {}) or {}
+        clear = [key for key in ('title', 'author', 'subject', 'keywords') if current.get(key) and not values.get(key)]
+        return {**values, 'clear': clear}
+
     def show_metadata(self):
         """Mostra o que o arquivo tem gravado e preenche os campos editáveis com isso."""
         if not self.files:
