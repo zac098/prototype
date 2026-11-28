@@ -1,6 +1,11 @@
 """Abre o RDF no novo visual (Qt): python -m rdf.qt"""
 
+import importlib
+import logging
+import shutil
 import sys
+import threading
+from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
@@ -14,7 +19,35 @@ from rdf.qt import errors, theme
 from rdf.qt.single_instance import InstanceServer, files_from_args, send_to_running
 from rdf.qt.theme import FONT_FAMILY
 from rdf.qt.tray import TrayController
+from rdf.qt.updater import DOWNLOAD_DIR
 from rdf.qt.window import MainWindow
+
+_translator = None  # a tradução do Qt instalada (uma só vez, mesmo com create_app chamado de novo)
+
+
+def install_translations(app):
+    """Textos do próprio Qt em português: botões Sim e Não, o menu de copiar e colar dos campos etc.
+
+    Sem o arquivo de tradução (instalação incompleta), esses textos ficam em inglês, sem erro."""
+    global _translator
+    if _translator is not None:
+        return True
+    import PySide6
+    from PySide6.QtCore import QLibraryInfo, QTranslator
+
+    package = Path(PySide6.__file__).resolve().parent
+    folders = (
+        QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath),
+        package / 'translations',  # PySide6 no Windows e o RDF empacotado
+        package / 'Qt' / 'translations',  # PySide6 no Linux
+    )
+    translator = QTranslator(app)
+    for folder in folders:
+        if translator.load('qtbase_pt_BR', str(folder)):
+            app.installTranslator(translator)
+            _translator = translator
+            return True
+    return False
 
 
 def create_app(argv=None):
@@ -22,6 +55,7 @@ def create_app(argv=None):
     app = QApplication.instance() or QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName('RDF')
     app.setApplicationVersion(APP_VERSION)
+    install_translations(app)
     app.setStyle('Fusion')  # segue a paleta do tema (claro ou escuro) também no que a folha de estilo não cobre
     app.setFont(QFont(FONT_FAMILY, 10))
     theme.apply(app, settings.current().get('theme'))
@@ -29,6 +63,29 @@ def create_app(argv=None):
 
 
 TRAY_WAIT_SECONDS = 45  # no login, a área de notificação do Windows pode demorar a aparecer
+LOGGER = logging.getLogger('rdf')
+
+# O que as ferramentas usam e a tela inicial não: carregado em segundo plano logo depois que a janela aparece, para a
+# primeira ferramenta abrir sem esperar. Só módulos sem Qt (as telas continuam sendo criadas no fio principal).
+PRELOAD_MODULES = ('fitz', 'PIL.Image', 'numpy', 'cv2', 'pytesseract', 'rdf.pdftools.sources', 'rdf.core.ocr')
+PRELOAD_DELAY_MS = 800  # depois da primeira pintura da janela
+PRELOAD_DELAY_BACKGROUND_MS = 15000  # no início automático: espera o Windows terminar de abrir os outros programas
+
+
+def preload_in_background(modules=PRELOAD_MODULES):
+    """Importa os módulos pesados numa thread à parte. Um que falhar aqui falha de novo, com a mensagem certa, quando
+    a ferramenta for usada; por isso o erro só vai para o log."""
+
+    def load():
+        for name in modules:
+            try:
+                importlib.import_module(name)
+            except Exception:
+                LOGGER.warning('Pré-carregamento de %s falhou', name, exc_info=True)
+
+    thread = threading.Thread(target=load, name='rdf-preload', daemon=True)
+    thread.start()
+    return thread
 
 
 def wait_for_tray(window, seconds=TRAY_WAIT_SECONDS, interval_ms=1000):
@@ -66,6 +123,7 @@ def main(argv=None):
     theme.apply(app, settings.load(SETTINGS_FILE).get('theme'))
     if first:  # só o primeiro processo é dono das pastas temporárias
         sweep_stale_data()
+        shutil.rmtree(DOWNLOAD_DIR, ignore_errors=True)  # o instalador da última atualização já foi usado
     app.setQuitOnLastWindowClosed(False)  # quem encerra é a janela ao fechar de verdade (ou o "Sair" da bandeja)
     window = MainWindow()
     tray = TrayController(window) if TrayController.available() else None
@@ -77,6 +135,8 @@ def main(argv=None):
         wait_for_tray(window)
     if files:
         window.receive_print_files(files)
+    QTimer.singleShot(PRELOAD_DELAY_BACKGROUND_MS if background else PRELOAD_DELAY_MS, preload_in_background)
+    window.updater.start()  # procura versão nova daqui a pouco (se o usuário não desligou nas Configurações)
     return app.exec()
 
 

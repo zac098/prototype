@@ -21,7 +21,8 @@ from PySide6.QtWidgets import (
 from rdf import APP_VERSION
 from rdf.core import settings
 from rdf.pdftools.registry import CATEGORIES, NEW_TOOLS, TOOLS_BY_ID, search_tools
-from rdf.qt import theme
+from rdf.qt import icons, theme
+from rdf.qt.updater import UpdateBanner
 from rdf.qt.widgets import BrandMark, SearchBar, SmoothScrollArea, ToolRow, icon_button
 
 COLUMN_MIN_WIDTH = 330
@@ -41,6 +42,8 @@ class HomePage(QWidget):
     settingsRequested = Signal()
     aboutRequested = Signal()
     shortcutsRequested = Signal()
+    updatesRequested = Signal()  # "Procurar atualizações" no menu de ajuda
+    updateRequested = Signal()  # "Atualizar…" no aviso de versão nova
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -56,6 +59,12 @@ class HomePage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         outer.addWidget(self._build_header())
+        banner_row = QHBoxLayout()
+        banner_row.setContentsMargins(SIDE_MARGIN, 4, SIDE_MARGIN, 2)
+        self.update_banner = UpdateBanner()
+        self.update_banner.updateRequested.connect(self.updateRequested)
+        banner_row.addWidget(self.update_banner)
+        outer.addLayout(banner_row)
 
         self.scroll = SmoothScrollArea()
         outer.addWidget(self.scroll, 1)
@@ -76,9 +85,17 @@ class HomePage(QWidget):
         self.empty_label.hide()
         body.addWidget(self.empty_label)
         body.addSpacing(12)
-        note = QLabel('🔒  Os arquivos são processados neste computador e não saem dele.')
+        privacy = QHBoxLayout()
+        privacy.setSpacing(8)
+        self.privacy_icon = QLabel()
+        self.privacy_icon.setFixedSize(16, 16)
+        privacy.addWidget(self.privacy_icon)
+        note = QLabel('Os arquivos são processados neste computador e não saem dele.')
         note.setObjectName('hint')
-        body.addWidget(note)
+        privacy.addWidget(note)
+        privacy.addStretch(1)
+        body.addLayout(privacy)
+        self.update_privacy_icon()
         body.addStretch(1)
         self.scroll.setWidget(content)
 
@@ -122,11 +139,11 @@ class HomePage(QWidget):
         row.addWidget(self.search, 100)
         row.addStretch(1)
 
-        self.theme_button = icon_button(0xE793, '◐', 'Tema')
+        self.theme_button = icon_button('theme', 'Tema')
         self.theme_button.clicked.connect(self.show_theme_menu)
-        self.settings_button = icon_button(0xE713, '⚙', 'Configurações (Ctrl+,)')
+        self.settings_button = icon_button('settings', 'Configurações (Ctrl+,)')
         self.settings_button.clicked.connect(self.settingsRequested)
-        self.help_button = icon_button(0xE897, '?', 'Ajuda (F1)')
+        self.help_button = icon_button('help', 'Ajuda (F1)')
         self.help_button.clicked.connect(self.show_help_menu)
         for button in (self.theme_button, self.settings_button, self.help_button):
             row.addWidget(button)
@@ -159,6 +176,11 @@ class HomePage(QWidget):
     def update_theme_button(self, *_args):
         mode = theme.current_mode()
         self.theme_button.setToolTip(f'Tema: {THEME_LABELS.get(mode, mode)}')
+        self.update_privacy_icon()
+
+    def update_privacy_icon(self):
+        if hasattr(self, 'privacy_icon'):  # o cabeçalho é montado antes do rodapé
+            self.privacy_icon.setPixmap(icons.pixmap('shield', 16, theme.COLORS['faint'], self.devicePixelRatioF()))
 
     def theme_menu(self):
         menu = QMenu(self)
@@ -176,8 +198,13 @@ class HomePage(QWidget):
     def help_menu(self):
         menu = QMenu(self)
         menu.addAction('Atalhos do teclado\tF1', self.shortcutsRequested.emit)
+        menu.addAction('Procurar atualizações', self.updatesRequested.emit)
         menu.addAction('Sobre o RDF', self.aboutRequested.emit)
         return menu
+
+    def show_update(self, release):
+        """Mostra o aviso de versão nova no topo da tela inicial."""
+        self.update_banner.show_release(release)
 
     def show_help_menu(self):
         self.help_menu().exec(self.help_button.mapToGlobal(QPoint(0, self.help_button.height())))
@@ -297,7 +324,7 @@ class HomePage(QWidget):
         if focused_id:  # o foco volta para a mesma ferramenta (na seção da categoria, não na das favoritas)
             match = [card for card in self.cards if card.tool.id == focused_id]
             if match:
-                match[-1].setFocus()
+                match[-1].setFocus(Qt.TabFocusReason)  # pelo teclado: mostra o destaque de foco
         return favorite
 
     # ---- teclado -------------------------------------------------------------------------
@@ -308,7 +335,7 @@ class HomePage(QWidget):
 
     def focus_first(self):
         if self.cards:
-            self.cards[0].setFocus()
+            self.cards[0].setFocus(Qt.TabFocusReason)
 
     def move_focus(self, card, dx, dy):
         """Leva o foco para a ferramenta vizinha na direção das setas (subindo da primeira, volta à busca)."""
@@ -328,7 +355,7 @@ class HomePage(QWidget):
             if best_score is None or score < best_score:
                 best, best_score = other, score
         if best is not None:
-            best.setFocus()
+            best.setFocus(Qt.TabFocusReason)
         elif dy < 0:
             self.search.focus_edit()
 

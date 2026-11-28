@@ -143,14 +143,22 @@ if errorlevel 1 goto BUILD_ERROR
 
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
-if exist RDF.spec del /q RDF.spec
 
-rem The app uses Qt (PySide6): PyInstaller bundles it with its own hook. Tkinter is left out on purpose.
+rem The recipe is packaging\rdf.spec: one analysis builds dist\RDF (folder used by the installer, fast to open)
+rem and dist\RDF_portatil.exe (single file). packaging\bundle_rules.py lists what is left out and why.
 
-echo Building RDF.exe...
-"%BUILD_PYTHON%" -m PyInstaller --noconfirm --clean --onefile --windowed --name RDF --exclude-module tkinter --exclude-module tkinterdnd2 --exclude-module PySide6.QtWebEngineCore --exclude-module PySide6.QtWebEngineWidgets --exclude-module PySide6.QtQml --exclude-module PySide6.QtQuick --exclude-module PySide6.QtQuickWidgets --exclude-module PySide6.QtSql --exclude-module PySide6.QtTest --exclude-module PySide6.QtPdf --exclude-module PySide6.QtPdfWidgets --collect-all cv2 --collect-all fitz --add-binary "%TESSERACT_DIR%;Tesseract-OCR" --add-data "%ROOT%assets\icone.ico;assets" --icon "%ROOT%assets\icone.ico" "%ROOT%rdf_app.py"
+echo Building RDF...
+"%BUILD_PYTHON%" -m PyInstaller --noconfirm --clean "%ROOT%packaging\rdf.spec"
 if errorlevel 1 goto BUILD_ERROR
-if not exist "%ROOT%dist\RDF.exe" goto BUILD_ERROR
+if not exist "%ROOT%dist\RDF\RDF.exe" goto BUILD_ERROR
+if not exist "%ROOT%dist\RDF_portatil.exe" goto BUILD_ERROR
+
+echo Checking the packaged app (self-test: OCR, PDF tools and every screen)...
+set "SELFTEST=%TEMP%\rdf_autoteste.json"
+if exist "%SELFTEST%" del /q "%SELFTEST%" >nul 2>&1
+start "" /wait "%ROOT%dist\RDF\RDF.exe" --autoteste "%SELFTEST%"
+if errorlevel 1 goto SELFTEST_ERROR
+if not exist "%SELFTEST%" goto SELFTEST_ERROR
 
 if not exist installer_output mkdir installer_output
 echo Building the installer...
@@ -163,6 +171,8 @@ mkdir "%DELIVERY%"
 if errorlevel 1 goto BUILD_ERROR
 copy /y "%INSTALLER%" "%DELIVERY%\RDF_Setup.exe" >nul
 if errorlevel 1 goto BUILD_ERROR
+copy /y "%ROOT%dist\RDF_portatil.exe" "%DELIVERY%\RDF_portatil.exe" >nul
+if errorlevel 1 goto BUILD_ERROR
 if exist "%ROOT%docs\DELIVERY_GUIDE.md" copy /y "%ROOT%docs\DELIVERY_GUIDE.md" "%DELIVERY%\DELIVERY_GUIDE.md" >nul
 if errorlevel 1 goto BUILD_ERROR
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$f=Join-Path $env:DELIVERY 'RDF_Setup.exe'; $h=(Get-FileHash -Algorithm SHA256 -LiteralPath $f).Hash.ToLower(); Set-Content -Encoding ASCII -LiteralPath ($f+'.sha256') -Value ($h+'  RDF_Setup.exe')"
@@ -170,7 +180,6 @@ if errorlevel 1 goto BUILD_ERROR
 
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
-if exist RDF.spec del /q RDF.spec
 
 echo Package created successfully: %DELIVERY%
 start "" "%DELIVERY%"
@@ -209,6 +218,11 @@ goto END
 :VENV_ERROR
 echo ERROR: The build environment could not be created or used.
 echo Delete the .venv_build directory and run this script again.
+goto END
+
+:SELFTEST_ERROR
+echo ERROR: The packaged app failed its self-test. Details: %SELFTEST%
+if exist "%SELFTEST%" type "%SELFTEST%"
 goto END
 
 :BUILD_ERROR

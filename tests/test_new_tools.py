@@ -40,7 +40,9 @@ def colored_pixels(path):
     with fitz.open(path) as document:
         pix = document[0].get_pixmap(dpi=50)
     picture = Image.frombytes('RGB', (pix.width, pix.height), pix.samples)
-    return sum(1 for red, green, blue in picture.getdata() if max(red, green, blue) - min(red, green, blue) > 12)
+    return sum(
+        1 for red, green, blue in picture.get_flattened_data() if max(red, green, blue) - min(red, green, blue) > 12
+    )
 
 
 class ToolTestCase(unittest.TestCase):

@@ -24,6 +24,7 @@ DEFAULTS = {
     'favorites': [],  # ids das ferramentas marcadas com estrela, na ordem em que foram marcadas
     'recent': [],  # ids das ferramentas usadas, da mais recente para a mais antiga
     'open_folder_after': False,  # abrir a pasta do resultado ao terminar uma ferramenta
+    'check_updates': True,  # procurar versão nova no GitHub ao abrir (e uma vez por dia com o app aberto)
     'window_geometry': '',  # tamanho e posição da janela (base64 do Qt)
     'last_folder': '',  # a última pasta usada nas janelas de escolher arquivos (só na memória: ver TRANSIENT)
 }

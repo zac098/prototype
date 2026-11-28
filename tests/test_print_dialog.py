@@ -77,6 +77,10 @@ class QtPrintCase(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name)
         self.out = self.tmp / 'saida.pdf'
+        # Sem o Edge de verdade: no Windows ele está instalado e o "Imprimir" o abriria no meio dos testes.
+        no_edge = mock.patch('rdf.qt.print_dialog.edge_path', return_value=None)
+        no_edge.start()
+        self.addCleanup(no_edge.stop)
 
     def printer(self):
         from PySide6.QtPrintSupport import QPrinter
@@ -95,6 +99,7 @@ class QtPrintCase(unittest.TestCase):
 
         dialog = PrintDialog(pdf, 'teste', None, printers=printers)
         self.addCleanup(dialog.deleteLater)
+        self.addCleanup(dialog.release)  # antes de apagar a pasta temporária: no Windows, PDF aberto não se apaga
         return dialog
 
 
@@ -223,6 +228,7 @@ class MergeFlowTests(QtPrintCase):
             seen['title'] = title
             dialog.exec = lambda: 1
             dialog.make_printer = self.printer
+            seen['dialog'] = dialog
             return dialog
 
         with mock.patch.object(page, 'make_preview_dialog', side_effect=make_preview):
@@ -231,6 +237,9 @@ class MergeFlowTests(QtPrintCase):
         self.assertEqual(len(self.output()), 2)  # 4 páginas, 2 por folha
         self.assertIn('4 página(s) em 2 folha(s)', page.message.text())
         self.assertFalse(page.print_folder.exists())
+        # o PDF da prévia foi fechado antes de a cópia temporária ser apagada (no Windows, aberto não se apaga)
+        self.assertIsNone(seen['dialog'].document)
+        seen['dialog'].deleteLater()
 
     def test_cancelling_the_preview_prints_nothing(self):
         from rdf.core import settings
@@ -311,6 +320,32 @@ class EdgeLikeOptionsTests(QtPrintCase):
         self.assertFalse(copy.exists())
 
 
+class PrintOnOpenTests(QtPrintCase):
+    def test_the_request_is_written_as_a_javascript_open_action(self):
+        pdf = make_pdf(self.tmp / 'a.pdf', pages=2)
+        self.assertTrue(printing.add_print_on_open(pdf))
+        with fitz.open(pdf) as document:
+            kind, action = document.xref_get_key(document.pdf_catalog(), 'OpenAction')
+            self.assertEqual(document.page_count, 2)
+        self.assertEqual(kind, 'dict')
+        self.assertIn('/S/JavaScript', action.replace(' ', ''))
+        self.assertIn(
+            'this.print\\({bUI: true, bSilent: false, bShrinkToFit: true}\\);', action
+        )  # parênteses escapados
+
+    def test_a_protected_or_broken_pdf_goes_without_it(self):
+        locked = self.tmp / 'senha.pdf'
+        document = fitz.open()
+        document.new_page()
+        document.save(locked, encryption=fitz.PDF_ENCRYPT_AES_256, owner_pw='dono', user_pw='usuario')
+        document.close()
+        self.assertFalse(printing.add_print_on_open(locked))
+        broken = self.tmp / 'quebrado.pdf'
+        broken.write_bytes(b'%PDF-1.4 isto nao e um pdf')
+        with self.assertLogs('rdf', 'WARNING'):
+            self.assertFalse(printing.add_print_on_open(broken))
+
+
 class PrintGoesToEdgeTests(QtPrintCase):
     def test_with_edge_installed_print_opens_edge_directly(self):
         from rdf.core import settings
@@ -334,12 +369,19 @@ class PrintGoesToEdgeTests(QtPrintCase):
             page.print_files()
         preview.assert_not_called()  # nada de tela intermediária
         self.assertEqual(launched[0][0], 'msedge.exe')
-        from urllib.parse import unquote, urlparse
+        from urllib.parse import urlparse
+        from urllib.request import url2pathname
 
-        pdf = Path(unquote(urlparse(launched[0][1]).path))
+        pdf = Path(url2pathname(urlparse(launched[0][1]).path))  # file:///C:/... vira C:\... no Windows
         with fitz.open(pdf) as document:
             self.assertEqual(document.page_count, 3)  # os dois arquivos juntados, na ordem
-        self.assertIn('Ctrl+P', page.message.text())
+            action = document.xref_get_key(document.pdf_catalog(), 'OpenAction')[1]
+        self.assertIn('this.print', action)  # o Edge já abre pedindo a janela de impressão
+        self.assertIn('abre sozinha', page.message.text())
+        self.assertIn('Ctrl+P', page.message.text())  # e o plano B continua escrito
+        for original in ('a.pdf', 'b.pdf'):  # os arquivos do usuário não ganham nada
+            with fitz.open(self.tmp / original) as document:
+                self.assertEqual(document.xref_get_key(document.pdf_catalog(), 'OpenAction')[0], 'null')
         self.assertFalse(page.print_folder.exists())  # a junção temporária foi apagada
         page.discard_work()
         self.assertFalse(pdf.exists())  # e a cópia do Edge some ao sair do Unir PDF

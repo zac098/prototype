@@ -154,6 +154,9 @@ QFrame#card { background: @surface; border: 1px solid @line; border-radius: 12px
 QFrame#resultCard { background: @tone_ok_bg; border: 1px solid @line; border-radius: 10px; }
 QFrame#resultCard[tone="error"] { background: @danger_soft; }
 QFrame#vline { background: @line; border: none; }
+QFrame#updateBanner { background: @brand_soft; border: 1px solid @brand_line; border-radius: 10px; }
+QLabel#updateDot { background: @brand; border-radius: 4px; }
+QTextBrowser#releaseNotes { background: @raised; border: 1px solid @line; border-radius: 8px; padding: 6px 8px; }
 QFrame#dropzone { background: transparent; border: 2px dashed @brand_line; border-radius: 12px; }
 QFrame#dropzone[dragging="true"] { background: @brand_soft; border: 2px dashed @brand; }
 QWidget#homeContent, QWidget#optionsContent { background: transparent; }

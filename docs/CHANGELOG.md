@@ -1,5 +1,45 @@
 # Histórico de alterações
 
+## 4.1.0 - Abre mais rápido, atualiza sozinho e visual mais limpo
+
+### Mais rápido e mais leve
+- **Abre bem mais rápido.** O RDF instalado agora é uma pasta, e não mais um arquivo único de 200 MB que era descompactado inteiro a cada abertura. A tela inicial também deixou de carregar o OCR, o OpenCV e o PyMuPDF: eles são preparados em segundo plano logo depois que a janela aparece, e a primeira ferramenta abre sem espera.
+- **Renomeador mais rápido em computadores com mais núcleos**: lê até 8 folhas ao mesmo tempo (antes, sempre 4), deixando um núcleo livre para a janela. Nas 20 folhas de teste, cada leitura a mais em paralelo encurta o tempo quase na mesma proporção (1 de cada vez: 67 s; 4: 20 s).
+- **Download bem menor**: o instalador caiu de 197 MB para 77 MB, e a versão portátil de 206 MB para 109 MB. Saíram do pacote cópias repetidas das bibliotecas do Tesseract, programas de treino do Tesseract, OpenGL por software, vídeo do OpenCV, suporte a AVIF, traduções que não são pt-BR e arquivos de desenvolvimento.
+
+### Atualização dentro do app
+- O RDF avisa na tela inicial quando sai uma versão nova. **Atualizar…** mostra as novidades, baixa o instalador, confere que ele chegou inteiro (soma SHA-256 publicada na versão), fecha o RDF com as perguntas de sempre e instala, abrindo o app de novo no fim, com as mesmas configurações. Também em Ajuda > Procurar atualizações, no Sobre e nas Configurações, onde a procura automática pode ser desligada. A procura só consulta o GitHub do RDF: nada seu é enviado. Na versão portátil, o aviso abre a página da versão.
+
+### Imprimir
+- **Imprimir** (no "Unir PDF") abre o Edge já pedindo a janela de impressão: é só escolher a impressora e imprimir. Se ela não abrir sozinha, o Ctrl+P continua valendo. O pedido vai só na cópia temporária: os seus arquivos e o PDF salvo pelo "Unir PDF" ficam como estão.
+
+### Visual mais limpo
+- **Ícones novos**, desenhados para o RDF: nítidos em qualquer escala de tela e iguais em qualquer Windows.
+- Cada ferramenta mostra no topo **o ícone, o nome e a descrição** (antes o nome sumia ao adicionar arquivos). O botão Voltar ficou discreto e a tela vazia ganhou um convite para arrastar os arquivos.
+- O contorno de foco só aparece quando você usa o teclado (Tab), e não mais ao clicar.
+- Os botões padrão (Sim/Não) e o menu de copiar e colar dos campos de texto agora em português.
+
+### Correções
+- Depois de vários "Imprimir com o RDF" seguidos, a janela do RDF podia **fechar sozinha**: o canal entre os processos reaproveitava um objeto já apagado.
+- A janela de Configurações cortava os textos e espremia o botão Fechar.
+- Corrigir dados (renomeador): um mês fora da lista ("MARCO" sem cedilha, de uma sessão antiga) aparecia em branco e era apagado ao salvar a correção do nome. E uma correção com todos os campos vazios virava "CORRIGIDO" com o nome original: agora "Salvar correção" só funciona com algum campo preenchido.
+- Na tela vazia do renomeador, o título ficava por cima da dica.
+- **Comprimir PDF** nunca entrega um arquivo maior que o original: um PDF que já estava otimizado podia sair um pouco maior. Agora, se não der para reduzir, o resultado é uma cópia exata do original.
+- **Exportar** (renomeador): numa pasta funda, nome + pasta passavam do limite de 260 caracteres do Windows e o arquivo não era gravado; agora o nome encolhe para caber (mantendo a matrícula no começo). Um erro numa subpasta ou num PDF danificado não interrompe mais a exportação dos outros arquivos.
+- Os campos de número (cópias, margens, tamanho da letra) mostravam o número colado na borda.
+- Imprimir pela tela do RDF (sem o Edge) deixava a cópia temporária para trás no Windows, porque o PDF da prévia ficava aberto.
+- Salvar a sessão do renomeador falhava se a pasta de dados fosse apagada com o app aberto.
+- Fechar o RDF nunca espera a rede (uma procura de atualização lenta não segura o fechamento).
+- Os textos do "Unir PDF" ainda falavam da janela de impressão do Windows.
+- Numa janela média, os botões do "Unir PDF" e do "Imagem para PDF" apareciam cortados ("Adicion", "Limpar tu"). Agora eles descem para a linha de baixo quando não cabem ao lado do contador.
+- **Biblioteca da interface (PySide6) de volta à versão 6.11.3.** A 6.12.0 tinha dois defeitos de memória. Num deles, os botões e textos montados em linhas separadas não passavam a pertencer à janela, e a limpeza no fechamento podia apagá-los duas vezes e derrubar o processo. No outro, só no Python 3.11, cada aviso entre as partes da tela gastava uma referência interna do Python, e depois de muito uso o app fechava sozinho. Os testes acusam os dois se voltarem.
+
+### Por dentro
+- **Autoteste do executável** (`RDF.exe --autoteste resultado.json`): confere as bibliotecas, uma leitura real do Tesseract embutido, as ferramentas de PDF, a conexão segura e todas as telas. Roda no build de cada versão; se falhar, a versão não é publicada.
+- O CI do Windows escondia falhas dos testes (no PowerShell só o último comando contava). Agora o lint e os testes rodam em bash nos dois sistemas, e os testes da impressão não abrem mais o Microsoft Edge de verdade.
+- O CI caía de vez em quando no fim dos testes, com todos aprovados: era o PySide6 6.12.0 (veja Correções). A barra de botões das ferramentas também passou a decidir onde fica pela largura do próprio cartão, que no Windows pode mudar depois da janela.
+- Receita do PyInstaller em `packaging/rdf.spec`, com o que fica de fora explicado em `packaging/bundle_rules.py`. OpenCV na versão sem interface gráfica.
+
 ## 4.0.2
 - "Unir PDF" > **Imprimir…** abre o PDF juntado direto no Microsoft Edge, para imprimir pela tela de impressão dele (Ctrl+P), com prévia e todas as opções. A cópia fica na pasta temporária do RDF e é apagada ao sair do "Unir PDF" ou fechar o app. Sem o Edge no computador, abre a tela de impressão do próprio RDF.
 

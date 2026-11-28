@@ -9,6 +9,7 @@ import io
 import os
 import re
 import secrets
+import shutil
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,9 +18,19 @@ import fitz
 from PIL import Image, ImageOps, ImageSequence
 
 from rdf.core.fitz_lock import FITZ_LOCK, released
+from rdf.pdftools.choices import (  # noqa: F401 (as listas continuam acessíveis como ops.COMPRESSION_LEVELS etc.)
+    COMPRESSION_LEVELS,
+    MARGINS,
+    NUMBER_FORMATS,
+    NUMBER_POSITIONS,
+    OCR_LANGUAGES,
+    PAGE_SIZES,
+    PAPER_SIZES,
+    ROTATIONS,
+    WATERMARK_COLORS,
+)
+from rdf.pdftools.formats import IMAGE_EXTENSIONS  # noqa: F401 (ops.IMAGE_EXTENSIONS, usado pelas telas)
 from rdf.pdftools.pages import PageRangeError, parse_page_groups, parse_page_ranges
-
-IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp', '.gif'}
 
 
 class PdfToolError(ValueError):
@@ -242,12 +253,6 @@ def reorder_pages(source, dest, mode, spec='', progress=_noop):
 
 # ---- otimizar ------------------------------------------------------------------------------
 
-COMPRESSION_LEVELS = {
-    'Baixa (melhor qualidade)': (None, 0),
-    'Recomendada': (1600, 70),
-    'Extrema (menor tamanho)': (1100, 45),
-}
-
 
 def _recompress_images(document, max_side, quality, progress):
     seen = set()
@@ -286,9 +291,17 @@ def compress_pdf(source, dest, level='Recomendada', progress=_noop):
             _recompress_images(document, max_side, quality, progress)
         progress(0.95, 'Gravando o PDF')
         document.save(temp, garbage=4, deflate=True, deflate_images=True, deflate_fonts=True, clean=True)
+        unchanged = Path(temp).stat().st_size >= before
+        if unchanged:
+            # Comprimir nunca entrega um arquivo maior que o original: a saída vira uma cópia exata dele. Decidido antes
+            # de trocar o destino, então vale também para quem salva por cima do próprio arquivo.
+            shutil.copyfile(source, temp)
     after = Path(dest).stat().st_size
-    if after >= before:
-        return Result([Path(dest)], f'O arquivo já estava otimizado ({human_size(before)}); o tamanho quase não mudou.')
+    if unchanged:
+        return Result(
+            [Path(dest)],
+            f'O arquivo já estava otimizado ({human_size(before)}): o resultado é uma cópia do original, sem perda.',
+        )
     saved = round(100 * (before - after) / before)
     return Result([Path(dest)], f'De {human_size(before)} para {human_size(after)} (redução de {saved}%).')
 
@@ -315,7 +328,6 @@ def repair_pdf(source, dest, progress=_noop):
 
 
 OCR_PAGE_TIMEOUT = 180  # segundos por página: um Tesseract travado não prende a ferramenta para sempre
-OCR_LANGUAGES = {'Português + Inglês': 'por+eng', 'Português': 'por', 'Inglês': 'eng'}
 
 
 def ocr_pdf(source, dest, language='Português + Inglês', dpi=200, progress=_noop):
@@ -358,9 +370,6 @@ def ocr_pdf(source, dest, language='Português + Inglês', dpi=200, progress=_no
 
 
 # ---- converter -----------------------------------------------------------------------------
-
-PAGE_SIZES = {'Ajustar à imagem': None, 'A4': (595, 842), 'Carta': (612, 792)}
-MARGINS = {'Nenhuma': 0, 'Pequena': 18, 'Grande': 40}
 
 
 def _image_frames(path):
@@ -528,8 +537,6 @@ def pdf_to_text(source, dest, layout='Texto corrido', progress=_noop):
 
 # ---- editar --------------------------------------------------------------------------------
 
-ROTATIONS = {'90° para a direita': 90, '180°': 180, '90° para a esquerda': 270}
-
 
 def rotate_pdf(source, dest, angle='90° para a direita', spec='', progress=_noop):
     degrees = ROTATIONS.get(angle, 90)
@@ -564,17 +571,6 @@ def crop_pdf(source, dest, top=0.0, bottom=0.0, left=0.0, right=0.0, progress=_n
             )
         _save(document, temp)
     return Result([Path(dest)], 'Margens cortadas em todas as páginas.')
-
-
-NUMBER_POSITIONS = (
-    'Inferior centralizado',
-    'Inferior direita',
-    'Inferior esquerda',
-    'Superior centralizado',
-    'Superior direita',
-    'Superior esquerda',
-)
-NUMBER_FORMATS = ('1', 'Página 1', 'Página 1 de N', '1 / N')
 
 
 def _format_number(style, number, total):
@@ -624,14 +620,6 @@ def add_page_numbers(
     return Result([Path(dest)], 'Números de página adicionados.')
 
 
-WATERMARK_COLORS = {
-    'Cinza': (0.5, 0.5, 0.5),
-    'Vermelho': (0.8, 0.1, 0.1),
-    'Azul': (0.1, 0.3, 0.75),
-    'Preto': (0, 0, 0),
-}
-
-
 def add_watermark(source, dest, text, size=60, opacity=30, angle='Diagonal', color='Cinza', progress=_noop):
     text = (text or '').strip()
     if not text:
@@ -677,9 +665,6 @@ def grayscale_pdf(source, dest, progress=_noop):
     return Result(
         [Path(dest)], f'{total} página' + ('s convertidas' if total != 1 else ' convertida') + ' para tons de cinza.'
     )
-
-
-PAPER_SIZES = {'A4': (595.0, 842.0), 'Carta': (612.0, 792.0), 'Ofício': (612.0, 1008.0), 'A3': (842.0, 1191.0)}
 
 
 def _sheet_size(paper, landscape):

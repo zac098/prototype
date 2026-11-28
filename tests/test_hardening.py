@@ -218,14 +218,18 @@ class DeliveryTests(unittest.TestCase):
             self.assertIn(step, ci)
         self.assertIn('QT_QPA_PLATFORM: offscreen', ci)
         self.assertIn('coverage', (ROOT / 'requirements-dev.txt').read_text(encoding='utf-8'))
+        # No PowerShell só o último comando do passo contava: uma falha dos testes no Windows passava calada.
+        for step in ('- name: Lint', '- name: Testes com cobertura'):
+            block = ci.split(step, 1)[1].split('- name:', 1)[0]
+            self.assertIn('shell: bash', block, step)
 
     def test_the_build_leaves_out_what_the_app_does_not_use(self):
-        bat = (ROOT / 'packaging' / 'build_package.bat').read_text(encoding='utf-8')
+        spec = (ROOT / 'packaging' / 'rdf.spec').read_text(encoding='utf-8')
         for module in ('QtWebEngineCore', 'QtQml', 'QtQuick', 'QtPdf', 'QtSql'):
-            self.assertIn(f'--exclude-module PySide6.{module}', bat)
+            self.assertIn(f"'PySide6.{module}',", spec)
 
     def test_the_app_only_imports_qt_modules_that_ship_in_essentials(self):
-        essentials = {'QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtPrintSupport'}
+        essentials = {'QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtPrintSupport', 'QtSvg'}  # QtSvg: os ícones
         found = set()
         for path in (ROOT / 'rdf').rglob('*.py'):
             found |= set(re.findall(r'PySide6\.(Qt\w+)', path.read_text(encoding='utf-8')))

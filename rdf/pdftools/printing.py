@@ -8,6 +8,7 @@ instalada e não depende de qual programa o Windows usa para abrir PDF.
 O Qt só é carregado quando se imprime: importar este módulo não puxa a interface.
 """
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +16,34 @@ import fitz
 
 from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import ops
+
+LOGGER = logging.getLogger('rdf')
+
+# Pedido para o leitor de PDF abrir a janela de impressão assim que o arquivo abrir (o leitor do Edge e do Chrome
+# entendem este JavaScript; os que não rodam JavaScript ignoram, e o Ctrl+P continua valendo).
+PRINT_ON_OPEN = 'this.print({bUI: true, bSilent: false, bShrinkToFit: true});'
+
+
+def _pdf_string(text):
+    return text.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
+
+
+def add_print_on_open(path):
+    """Grava no PDF (a cópia que vai para o Edge) o pedido de abrir a janela de impressão ao abrir. True se gravou.
+
+    Só a cópia temporária recebe o pedido: os arquivos do usuário e o PDF salvo pelo "Unir PDF" ficam como estão."""
+    try:
+        with FITZ_LOCK, fitz.open(path) as document:
+            if document.needs_pass or document.is_encrypted:
+                return False
+            action = f'<</S/JavaScript/JS({_pdf_string(PRINT_ON_OPEN)})>>'
+            document.xref_set_key(document.pdf_catalog(), 'OpenAction', action)
+            document.saveIncr()
+        return True
+    except Exception as exc:  # um PDF que não aceita gravação incremental: vai sem o pedido (o Ctrl+P resolve)
+        LOGGER.warning('Não foi possível pedir a impressão ao abrir %s: %s', path, exc)
+        return False
+
 
 MAX_DPI = 300  # acima disso a página não fica melhor no papel e a imagem enviada à impressora só pesa mais
 PRINT_MAX_DPI = 600  # a opção "Qualidade" da tela de impressão vai até aqui

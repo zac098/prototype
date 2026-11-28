@@ -136,7 +136,9 @@ class PageLoader(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._signals = _Signals(self)
+        # Sem pai, como nas miniaturas: uma página ainda em desenho quando a tela é apagada avisa por um objeto que
+        # continua vivo (e já não leva a lugar nenhum), nunca por um que o Qt está apagando ao mesmo tempo.
+        self._signals = _Signals()
         self._signals.loaded.connect(self.loaded)
         self._signals.failed.connect(self.failed)
         self.pool = QThreadPool(self)

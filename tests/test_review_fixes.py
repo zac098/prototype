@@ -527,6 +527,9 @@ class MergePrintTests(TempCase):
 
         create_app([])
         settings.reset()
+        no_edge = mock.patch('rdf.qt.print_dialog.edge_path', return_value=None)  # o caminho da tela do RDF
+        no_edge.start()
+        self.addCleanup(no_edge.stop)
         patch = mock.patch.object(config, 'CONVERT_DIR', self.tmp / 'conv')
         patch.start()
         self.addCleanup(patch.stop)

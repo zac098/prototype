@@ -12,7 +12,7 @@ import weakref
 from pathlib import Path
 from types import SimpleNamespace
 
-from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QSpinBox,
     QStackedWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -38,10 +37,11 @@ from PySide6.QtWidgets import (
 from rdf.core import config, settings
 from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import jobs, ops, sources
+from rdf.qt import icons
 from rdf.qt.busy import Responsive
 from rdf.qt.page_picker import PagePicker
 from rdf.qt.thumbnails import ThumbnailLoader
-from rdf.qt.widgets import BackButton, SmoothScrollArea, ToolTile
+from rdf.qt.widgets import BackButton, DropIcon, SmoothScrollArea, SpinBox, ToolTile
 
 PREVIEW_SIZE = (230, 300)
 OPTIONS_WIDTH = 380
@@ -198,6 +198,8 @@ class ToolPage(QWidget):
         self.options_card = self._build_options_card()
         layout.addWidget(self.files_card, 1)
         layout.addWidget(self.options_card, 0)
+        # Onde a barra de botões cabe depende da largura do cartão (não da tela): confere a cada mudança dele.
+        self.files_card.installEventFilter(self)
         self._connect_picker()
         self.refresh_files()
 
@@ -205,37 +207,55 @@ class ToolPage(QWidget):
     def _build_files_card(self):
         card = make_card()
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(12)
-        self.back_button = BackButton()
-        self.back_button.clicked.connect(self.backRequested)
-        layout.addWidget(self.back_button, 0, Qt.AlignLeft)
+        layout.setContentsMargins(18, 14, 18, 18)
+        layout.setSpacing(14)
+        layout.addLayout(self._build_header())
         self.files_stack = QStackedWidget()
         layout.addWidget(self.files_stack)
         self.files_stack.addWidget(self._build_empty())
         self.files_stack.addWidget(self._build_listing())
         return card
 
+    def _build_header(self):
+        """Topo da tela: Voltar, o ícone e o nome da ferramenta (fica sempre à vista, com ou sem arquivos)."""
+        tool = self.tool
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.back_button = BackButton()
+        self.back_button.clicked.connect(self.backRequested)
+        row.addWidget(self.back_button, 0, Qt.AlignVCenter)
+        divider = QFrame()
+        divider.setObjectName('vline')
+        divider.setFixedSize(1, 28)
+        row.addWidget(divider, 0, Qt.AlignVCenter)
+        self.header_tile = ToolTile(tool, 38, solid=False)
+        row.addWidget(self.header_tile, 0, Qt.AlignVCenter)
+        texts = QVBoxLayout()
+        texts.setSpacing(1)
+        self.title_label = QLabel(tool.title)
+        self.title_label.setObjectName('cardTitle')
+        self.title_label.setAccessibleName(f'Ferramenta: {tool.title}')
+        self.lead_label = QLabel(tool.description)
+        self.lead_label.setObjectName('hint')
+        self.lead_label.setWordWrap(True)
+        texts.addWidget(self.title_label)
+        texts.addWidget(self.lead_label)
+        row.addLayout(texts, 1)
+        return row
+
     def _build_empty(self):
         tool = self.tool
         self.dropzone = QFrame()
         self.dropzone.setObjectName('dropzone')
+        # Sem alinhar o layout inteiro (setAlignment): isso encolhia os textos à largura "sugerida" e os com quebra de
+        # linha ficavam numa coluna estreita ou um por cima do outro. Os textos ocupam a largura toda, centralizados.
         layout = QVBoxLayout(self.dropzone)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(24, 16, 24, 16)
         layout.setSpacing(6)
         layout.addStretch(1)
-        layout.addWidget(ToolTile(tool, 72), 0, Qt.AlignHCenter)
-        layout.addSpacing(8)
-        title = QLabel(tool.title)
-        title.setObjectName('pageTitle')
-        lead = QLabel(tool.description)
-        lead.setObjectName('pageLead')
-        lead.setWordWrap(True)
-        lead.setAlignment(Qt.AlignCenter)
-        lead.setMaximumWidth(420)
-        layout.addWidget(title, 0, Qt.AlignHCenter)
-        layout.addWidget(lead, 0, Qt.AlignHCenter)
-        layout.addSpacing(18)
+        self.drop_icon = DropIcon()
+        layout.addWidget(self.drop_icon, 0, Qt.AlignHCenter)
+        layout.addSpacing(10)
         drop = QLabel(f'Arraste {self.kind_label} aqui')
         drop.setObjectName('cardTitle')
         layout.addWidget(drop, 0, Qt.AlignHCenter)
@@ -256,11 +276,10 @@ class ToolPage(QWidget):
         )
         if tool.any_format and tool.inputs == 'pdf':
             hint.setText(hint.text() + '\nAceita PDF, imagens, textos, HTML e documentos do Word, Excel e PowerPoint.')
-            hint.setWordWrap(True)
-            hint.setAlignment(Qt.AlignCenter)
-            hint.setMaximumWidth(420)
+        hint.setWordWrap(True)
+        hint.setAlignment(Qt.AlignCenter)
         hint.setObjectName('hint')
-        layout.addWidget(hint, 0, Qt.AlignHCenter)
+        layout.addWidget(hint)
         layout.addStretch(1)
         return self.dropzone
 
@@ -279,9 +298,12 @@ class ToolPage(QWidget):
         self.add_button = small_button('')
         self.add_button.setToolTip('Atalho: Ctrl+O')
         self.add_button.clicked.connect(self.add_dialog)
+        icons.set_themed_icon(self.add_button, 'add', 'ink', 16)
         buttons.addWidget(self.add_button)
         if tool.mode == 'combine' or tool.ordered:
-            self.up_button, self.down_button = small_button('↑'), small_button('↓')
+            self.up_button, self.down_button = small_button(''), small_button('')
+            icons.set_themed_icon(self.up_button, 'up', 'ink', 16)
+            icons.set_themed_icon(self.down_button, 'down', 'ink', 16)
             self.up_button.setAccessibleName('Mover para cima')
             self.down_button.setAccessibleName('Mover para baixo')
             self.up_button.setToolTip('Mover para cima')
@@ -297,6 +319,7 @@ class ToolPage(QWidget):
             buttons.addWidget(self.sort_button)
         self.remove_button = small_button('Remover')
         self.remove_button.setToolTip('Atalho: Delete')
+        icons.set_themed_icon(self.remove_button, 'trash', 'ink', 16)
         self.remove_button.clicked.connect(self.remove_selected)
         self.clear_button = small_button('')
         self.clear_button.clicked.connect(self.clear_files)
@@ -369,16 +392,8 @@ class ToolPage(QWidget):
         return page
 
     def arrange_bar(self, narrow):
-        """Largo: contador à esquerda e botões à direita, na mesma linha. Estreito: contador em cima e botões
-        embaixo, com textos curtos (senão os botões ficam cortados)."""
-        self.bar.removeWidget(self.counter)
-        self.bar.removeWidget(self.bar_buttons)
-        if narrow:
-            self.bar.addWidget(self.counter, 0, 0, 1, 2)
-            self.bar.addWidget(self.bar_buttons, 1, 0, 1, 2, Qt.AlignRight)
-        else:
-            self.bar.addWidget(self.counter, 0, 0)
-            self.bar.addWidget(self.bar_buttons, 0, 1, Qt.AlignRight)
+        """Textos dos botões: curtos na janela estreita. Onde a barra fica (ao lado do contador ou embaixo dele)
+        depende de caber, não só da largura da janela: veja fit_bar."""
         multiple = self.tool.multiple
         self.add_button.setText(
             ('Adicionar' if narrow else 'Adicionar mais') if multiple else ('Trocar' if narrow else 'Trocar arquivo')
@@ -386,6 +401,29 @@ class ToolPage(QWidget):
         self.clear_button.setText('Limpar' if narrow else 'Limpar tudo')
         for button in self.bar_buttons.findChildren(QPushButton):
             button.setMinimumWidth(button.sizeHint().width())  # nunca menor que o próprio texto
+        self._bar_stacked = None  # os botões mudaram de tamanho: confere de novo onde a barra cabe
+        self.fit_bar(force_stacked=narrow)
+
+    def fit_bar(self, force_stacked=None):
+        """Contador e botões na mesma linha quando cabem; senão, os botões descem para a linha de baixo (as setas e
+        os ícones deixam a barra do Unir PDF larga: numa janela média os botões ficavam cortados)."""
+        if force_stacked is None:
+            force_stacked = self.narrow
+        card = getattr(self, 'files_card', None)
+        available = card.contentsRect().width() - 36 if card is not None else 10**6  # margens internas do cartão
+        needed = self.counter.sizeHint().width() + self.bar.horizontalSpacing() + self.bar_buttons.sizeHint().width()
+        stacked = bool(force_stacked) or needed > available
+        if stacked == getattr(self, '_bar_stacked', None):
+            return
+        self._bar_stacked = stacked
+        self.bar.removeWidget(self.counter)
+        self.bar.removeWidget(self.bar_buttons)
+        if stacked:
+            self.bar.addWidget(self.counter, 0, 0, 1, 2)
+            self.bar.addWidget(self.bar_buttons, 1, 0, 1, 2, Qt.AlignRight)
+        else:
+            self.bar.addWidget(self.counter, 0, 0)
+            self.bar.addWidget(self.bar_buttons, 0, 1, Qt.AlignRight)
 
     def _build_options_card(self):
         tool = self.tool
@@ -491,7 +529,7 @@ class ToolPage(QWidget):
                 widget.setCurrentText(str(default))
                 getter, signal = widget.currentText, widget.currentTextChanged
             elif option.kind == 'int':
-                widget = QSpinBox()
+                widget = SpinBox()
                 widget.setRange(0, 100000)
                 widget.setValue(int(default or 0))
                 getter, signal = widget.value, widget.valueChanged
@@ -705,6 +743,7 @@ class ToolPage(QWidget):
             if self.tool.inputs == 'pdf' and total_pages:
                 extra = f'  ·  {total_pages} {"página" if total_pages == 1 else "páginas"}'
             self.counter.setText(f'{len(self.files)} {noun}{extra}')
+            self.fit_bar()  # um contador maior ("120 arquivos · 3400 páginas") pode empurrar os botões para baixo
             self.files_stack.setCurrentIndex(1)
             self.tree.setCurrentItem(self.tree.topLevelItem(0))
         else:
@@ -1018,3 +1057,8 @@ class ToolPage(QWidget):
             self.preview_side.setVisible(not narrow)
             self.arrange_bar(narrow)
             self.options_card.setFixedWidth(OPTIONS_NARROW if narrow else OPTIONS_WIDTH)
+
+    def eventFilter(self, watched, event):
+        if watched is self.files_card and event.type() == QEvent.Resize:
+            self.fit_bar()
+        return super().eventFilter(watched, event)

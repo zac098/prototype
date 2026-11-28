@@ -8,7 +8,7 @@ import platform
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -112,18 +113,35 @@ def _open(path):
 
 
 class SettingsDialog(QDialog):
-    """Configurações do RDF. themeChanged avisa a janela para aplicar o tema escolhido."""
+    """Configurações do RDF. themeChanged avisa a janela para aplicar o tema escolhido; updatesRequested pede uma
+    procura de atualização agora."""
 
     themeChanged = Signal(str)
+    updatesRequested = Signal()
+
+    WIDTH = 580
 
     def __init__(self, parent=None, tesseract=None):
         super().__init__(parent)
         self.setWindowTitle('Configurações')
         self.setModal(True)
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(self.WIDTH)
         prefs = settings.current()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 20)
+        # O conteúdo rola dentro da janela: textos com quebra de linha não ficam cortados e a janela cabe em telas
+        # baixas (notebooks com 768 px de altura).
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 20)
+        outer.setSpacing(12)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.content = QWidget()
+        self.content.setObjectName('optionsContent')
+        self.scroll.setWidget(self.content)
+        outer.addWidget(self.scroll, 1)
+        layout = QVBoxLayout(self.content)
+        layout.setContentsMargins(24, 22, 24, 4)
         layout.setSpacing(12)
         layout.addWidget(_title('Configurações'))
 
@@ -160,6 +178,23 @@ class SettingsDialog(QDialog):
             layout.addWidget(_hint('Disponível só no Windows.'))
 
         layout.addWidget(_separator())
+        layout.addWidget(_section('Atualizações'))
+        updates_row = QHBoxLayout()
+        self.check_updates = QCheckBox('Procurar versões novas automaticamente')
+        self.check_updates.setChecked(prefs.get('check_updates'))
+        self.check_updates.toggled.connect(lambda value: settings.current().set('check_updates', value))
+        updates_row.addWidget(self.check_updates, 1)
+        self.updates_button = QPushButton('Procurar agora')
+        self.updates_button.clicked.connect(self.updatesRequested)
+        updates_row.addWidget(self.updates_button)
+        layout.addLayout(updates_row)
+        layout.addWidget(
+            _hint(
+                f'Você está usando a versão {APP_VERSION}. A procura só consulta o GitHub do RDF; nada seu é enviado.'
+            )
+        )
+
+        layout.addWidget(_separator())
         layout.addWidget(_section('OCR (Tesseract)'))
         self.tesseract_label = _hint(
             f'Encontrado em: {tesseract}'
@@ -189,15 +224,28 @@ class SettingsDialog(QDialog):
         buttons.addStretch(1)
         layout.addLayout(buttons)
 
-        layout.addSpacing(6)
+        layout.addStretch(1)
         close_row = QHBoxLayout()
+        close_row.setContentsMargins(24, 0, 24, 0)
         close_row.addStretch(1)
         close = QPushButton('Fechar')
         close.setProperty('variant', 'primary')
         close.setDefault(True)
         close.clicked.connect(self.accept)
         close_row.addWidget(close)
-        layout.addLayout(close_row)
+        outer.addLayout(close_row)
+        self.fit_height()
+
+    def fit_height(self):
+        """Altura certa para a largura da janela (os textos quebram em várias linhas), sem passar da tela."""
+        inner = self.WIDTH - 48
+        layout = self.content.layout()
+        needed = layout.totalHeightForWidth(inner) if layout.hasHeightForWidth() else layout.sizeHint().height()
+        height = needed + 90  # botão Fechar e margens
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            height = min(height, screen.availableGeometry().height() - 60)
+        self.resize(self.WIDTH, max(360, height))
 
     def _on_theme(self, index):
         value = self.theme_combo.itemData(index)
@@ -238,7 +286,7 @@ def library_versions():
     return found
 
 
-def about_dialog(parent=None, tesseract=None):
+def about_dialog(parent=None, tesseract=None, on_check_updates=None):
     dialog, layout = _dialog(parent, 'Sobre o RDF', 480)
     head = QHBoxLayout()
     head.setSpacing(14)
@@ -286,6 +334,11 @@ def about_dialog(parent=None, tesseract=None):
     logs = QPushButton('Abrir pasta do log')
     logs.clicked.connect(lambda: _open(config.LOG_DIR))
     row.addWidget(logs)
+    if on_check_updates is not None:
+        check = QPushButton('Procurar atualizações')
+        check.clicked.connect(on_check_updates)
+        row.addWidget(check)
+        dialog.updates_button = check
     row.addStretch(1)
     close = QPushButton('Fechar')
     close.setProperty('variant', 'primary')

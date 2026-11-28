@@ -13,12 +13,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
 )
 
 from rdf.core.naming import safe_filename
 from rdf.core.parsing import MONTH_OPTIONS
+from rdf.qt.widgets import SpinBox
 
 
 def _dialog(parent, title, width=460):
@@ -76,7 +76,7 @@ def multipage_dialog(parent, path, total):
     inner.addWidget(QLabel('Manter o PDF completo'))
     row = QHBoxLayout()
     row.addWidget(QLabel('Página usada para identificar os dados:'))
-    spin = QSpinBox()
+    spin = SpinBox()
     spin.setRange(1, total)
     row.addWidget(spin)
     row.addStretch(1)
@@ -98,21 +98,41 @@ def edit_dialog(parent, row):
     form.setHorizontalSpacing(14)
     form.setVerticalSpacing(10)
     chapa = QLineEdit(row.get('chapa') or '')
+    chapa.setObjectName('editChapa')
     nome = QLineEdit(row.get('nome') or '')
+    nome.setObjectName('editNome')
     mes = QComboBox()
+    mes.setObjectName('editMes')
     mes.addItems(['', *MONTH_OPTIONS])
-    mes.setCurrentText(str(row.get('mes') or '').upper())
+    current = str(row.get('mes') or '').strip().upper()
+    if current and mes.findText(current) < 0:
+        # Mês fora da lista (sessão antiga, "MARCO" sem cedilha...): fica como opção, para salvar não apagá-lo.
+        mes.addItem(current)
+    mes.setCurrentText(current)
     form.addRow('Matrícula/Chapa:', chapa)
     form.addRow('Nome:', nome)
     form.addRow('Mês da folha:', mes)
     layout.addLayout(form)
+    note = QLabel('Preencha ao menos um dos campos.')
+    note.setObjectName('hint')
+    layout.addWidget(note)
     buttons = QDialogButtonBox()
     save = buttons.addButton('Salvar correção', QDialogButtonBox.AcceptRole)
     save.setProperty('variant', 'primary')
+    save.setObjectName('saveCorrection')
     cancel = buttons.addButton('Cancelar', QDialogButtonBox.RejectRole)
     save.clicked.connect(dialog.accept)
     cancel.clicked.connect(dialog.reject)
     layout.addWidget(buttons)
+
+    def update_save():
+        filled = any(text.strip() for text in (chapa.text(), nome.text(), mes.currentText()))
+        save.setEnabled(filled)  # uma correção sem nada viraria "CORRIGIDO" com o nome original
+        note.setVisible(not filled)
+
+    for signal in (chapa.textChanged, nome.textChanged, mes.currentTextChanged):
+        signal.connect(update_save)
+    update_save()
     chapa.setFocus()
     if dialog.exec() != QDialog.Accepted:
         return None

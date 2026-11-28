@@ -17,7 +17,7 @@ from rdf.pdftools.pages import format_page_ranges, parse_page_ranges
 HAS_QT = importlib.util.find_spec('PySide6') is not None
 
 if HAS_QT:
-    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtCore import QEvent, QObject, Qt
     from rdf.core import settings
     from rdf.qt import motion
     from rdf.qt.__main__ import create_app
@@ -257,9 +257,22 @@ class LoaderTests(PageTestCase):
         loader.request(self.tmp / 'nao-existe.pdf', [0], 60)
         self.wait_until(lambda: failures)
 
+    def test_the_preview_loader_answers_through_an_object_that_outlives_the_screen(self):
+        """A prévia do renomeador: uma página ainda em desenho quando a tela é apagada avisa por um objeto que continua
+        vivo (como nas miniaturas), e não por um filho da tela que o Qt pode estar apagando ao mesmo tempo."""
+        from rdf.qt.preview import PageLoader
 
-if __name__ == '__main__':
-    unittest.main()
+        screen = QObject()
+        loader = PageLoader(screen)
+        self.assertIsNone(loader._signals.parent())
+        pages = []
+        loader.loaded.connect(lambda path, index, image, total, request: pages.append((index, total, request)))
+        loader.request(str(make_pdf(self.tmp / 'duas.pdf', 2)), 1, 7)
+        self.wait_until(lambda: pages)
+        self.assertEqual(pages, [(1, 2, 7)])
+        loader.wait()
+        screen.deleteLater()
+        self.app.sendPostedEvents(None, QEvent.DeferredDelete)
 
 
 @unittest.skipUnless(HAS_QT, 'PySide6 não instalado')
@@ -272,3 +285,7 @@ class RemovalMarkTests(PageTestCase):
         page.picker.buttons['none'].click()
         self.assertEqual(page.picker._marked, set())
         self.assertFalse(self.window.open_tool('extract').picker.marks_removal)  # extrair não remove nada
+
+
+if __name__ == '__main__':
+    unittest.main()

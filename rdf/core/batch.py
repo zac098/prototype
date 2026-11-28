@@ -484,6 +484,7 @@ class Batch:
         if self.persistence_disabled:
             return False
         try:
+            config.SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)  # a pasta de dados pode ter sido apagada
             temp = config.SESSION_FILE.with_suffix('.tmp')
             temp.write_text(json.dumps(self.session_data(), ensure_ascii=False, indent=2), encoding='utf-8')
             temp.replace(config.SESSION_FILE)

@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 *.spec
+!packaging/rdf.spec
 installer_output/
 release_pronta/
 *.part
@@ -25,3 +26,7 @@ resultados/
 # Configuração local do Tesseract (cada máquina tem o seu caminho)
 tesseract_path.txt
 arquivos para testar/
+# relatórios de cobertura (python -m coverage)
+.coverage
+.coverage.*
+htmlcov/

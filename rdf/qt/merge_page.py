@@ -1,10 +1,10 @@
 """Tela "Unir PDF": a tela padrão das ferramentas, com o botão Imprimir ao lado do Unir.
 
-"Imprimir..." junta a lista (na ordem) em um documento só e abre a tela de impressão do RDF (rdf.qt.print_dialog):
-prévia de cada folha, impressora, cópias, páginas, orientação, papel, páginas por folha, escala, margens, cor e frente e
-verso. A janela do Windows continua a um botão de distância, para os ajustes do driver. Com um único arquivo na lista,
-ele é impresso sozinho. Nada é salvo: o PDF juntado fica numa pasta temporária só enquanto a impressão é preparada e é apagado logo
-depois (impresso, cancelado ou com erro). Para guardar o PDF, o botão é o "Unir PDF".
+"Imprimir..." junta a lista (na ordem) em um documento só e abre esse PDF no Microsoft Edge, que tem a tela de
+impressão mais completa (prévia, páginas por folha, escala, margens): lá, é só apertar Ctrl+P. Sem o Edge, abre a tela
+de impressão do próprio RDF (rdf.qt.print_dialog), com prévia e a janela do Windows a um botão de distância. Com um
+único arquivo na lista, ele vai sozinho. Nada é salvo: o PDF juntado fica numa pasta temporária do RDF e é apagado ao
+sair da ferramenta ou fechar o app. Para guardar o PDF, o botão é o "Unir PDF".
 """
 
 import shutil
@@ -37,8 +37,8 @@ class MergePage(ToolPage):
         shortcut = QShortcut(QKeySequence('Ctrl+P'), self, activated=self.print_files)
         shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.print_hint = QLabel(
-            '"Unir PDF" salva o PDF juntado onde você escolher. "Imprimir" junta e abre no Edge para imprimir '
-            '(Ctrl+P): nada fica salvo.'
+            '"Unir PDF" salva o PDF juntado onde você escolher. "Imprimir" junta e abre no Edge, já pedindo a janela '
+            'de impressão (se ela não abrir, Ctrl+P): nada fica salvo.'
         )
         self.print_hint.setObjectName('hint')
         self.print_hint.setWordWrap(True)
@@ -46,8 +46,8 @@ class MergePage(ToolPage):
 
     def empty_options_text(self):
         return (
-            'Adicione os arquivos e ponha na ordem certa. Depois, "Unir PDF" para salvar um PDF só, ou "Imprimir" '
-            'para mandar tudo direto para a impressora, sem salvar.'
+            'Adicione os arquivos e ponha na ordem certa: a ordem da lista é a ordem das páginas. Arraste os '
+            'arquivos na lista, use as setas ou o botão A→Z.'
         )
 
     def update_print_button(self):
@@ -159,7 +159,12 @@ class MergePage(ToolPage):
             names = [Path(path).name for path in files]
             title = names[0] if len(names) == 1 else f'RDF - {len(names)} arquivos'
             preview = self.make_preview_dialog(pdf, title)
-            choice = preview.exec()
+            try:
+                choice = preview.exec()
+            finally:
+                release = getattr(preview, 'release', None)
+                if callable(release):
+                    release()  # garante o PDF fechado antes de a cópia temporária ser apagada
             if choice == PrintDialog.WINDOWS:
                 return self._print_with_windows(pdf, total, title)
             if choice == PrintDialog.EDGE:
@@ -202,12 +207,17 @@ class MergePage(ToolPage):
         folder.mkdir(parents=True, exist_ok=True)
         copy = folder / f'imprimir-{uuid.uuid4().hex[:6]}.pdf'
         shutil.copyfile(pdf, copy)
+        asked = printing.add_print_on_open(copy)  # o Edge já abre pedindo a janela de impressão
         try:
             (launcher or subprocess.Popen)([edge or 'msedge', copy.as_uri()])
         except OSError as exc:
             self.set_message(f'Não foi possível abrir o Edge: {exc}', 'error')
             return
-        self.set_message('Aberto no Edge: aperte Ctrl+P lá para imprimir. Nada fica salvo no computador.', 'ok')
+        if asked:
+            text = 'Aberto no Edge: a janela de impressão abre sozinha (se não abrir, aperte Ctrl+P).'
+        else:
+            text = 'Aberto no Edge: aperte Ctrl+P lá para imprimir.'
+        self.set_message(f'{text} Nada fica salvo no computador.', 'ok')
         return copy
 
     def _print_with_windows(self, pdf, total, title):

@@ -271,6 +271,17 @@ class SessionTests(TempCase):
         self.assertEqual(again.status(a), 'OK')
         self.assertEqual(again.status(again.files[1]), 'Pendente')
 
+    def test_the_session_is_saved_even_if_the_data_folder_was_deleted(self):
+        """Regressão: com a pasta de dados apagada (limpeza do Windows, antivírus), salvar a sessão falhava calado."""
+        import shutil
+
+        lote = batch.Batch()
+        lote.load([make_pdf(self.tmp / 'a.pdf')])
+        lote.accept_row(batch.row_from_result(lote.files[0], timesheet_result(), lote.options, 'PDF', {}))
+        shutil.rmtree(config.SESSION_FILE.parent)
+        self.assertTrue(lote.save_session())
+        self.assertTrue(config.SESSION_FILE.exists())
+
     def test_old_sessions_with_unknown_chapa_origin_go_back_to_review(self):
         pdf = make_pdf(self.tmp / 'a.pdf')
         data = {'files': [pdf], 'rows': [{'path': pdf, 'status': 'OK', 'chapa_source': 'desconhecida'}]}
@@ -518,6 +529,47 @@ class ExportTests(TempCase):
             result = exporter.export_batch(lote, out)
         self.assertEqual(result.count, 1)
         self.assertEqual(result.failures, [(lote.files[0], 'disco cheio')])
+
+    def test_names_are_shortened_to_fit_the_windows_path_limit(self):
+        """Numa pasta funda (OneDrive, RH\\Folhas\\2026...), o caminho inteiro passava de 260 caracteres e o Windows
+        recusava gravar, com uma mensagem técnica. O nome encolhe para caber, mantendo o começo (a matrícula)."""
+        folder = self.tmp / ('pasta funda ' * 6).strip()
+        base = '101838 - ' + 'MARIA ' * 30 + '- MARÇO'
+        limit = len(str(folder)) + 80
+        fitted = exporter.fit_base(folder, base, 'pdf', 'PDF', limit=limit)
+        self.assertTrue(fitted.startswith('101838 - MARIA'))
+        self.assertLessEqual(len(str(folder / f'{fitted} (999).pdf')), limit)
+        as_images = exporter.fit_base(folder, base, 'png', 'PNG', limit=limit)
+        self.assertLessEqual(
+            len(str(folder / f'{as_images} (999) - PÁGINA 001.png')), limit
+        )  # cada página ganha um sufixo
+        self.assertEqual(exporter.fit_base(folder, 'CURTO', 'pdf', 'PDF', limit=limit), 'CURTO')
+        self.assertEqual(exporter.fit_base(folder, base, 'pdf', 'PDF', limit=0), base)  # sem limite (fora do Windows)
+
+    def test_a_folder_too_deep_for_any_name_gets_a_clear_message(self):
+        lote = self.make_ready_batch(1)
+        out = self.tmp / 'saida'
+        with (
+            mock.patch.object(exporter, 'WINDOWS_MAX_PATH', len(str(out)) + 10),
+            mock.patch.object(exporter.sys, 'platform', 'win32'),
+        ):
+            result = exporter.export_batch(lote, out)
+        self.assertEqual(result.count, 0)
+        self.assertIn('caminho longo demais', result.failures[0][1])
+        self.assertIn('C:\\Exportados', result.failures[0][1])
+
+    def test_a_folder_that_cannot_be_created_fails_only_that_file(self):
+        """Antes, um erro ao criar a subpasta Atestados (ou ao abrir um PDF danificado exportando em imagens)
+        interrompia a exportação inteira; agora vira a falha só daquele arquivo."""
+        lote = self.make_ready_batch(2)
+        first = lote.files[0]
+        lote.rows[first].update({'category': 'Atestados'})
+        out = self.tmp / 'saida'
+        out.mkdir()
+        (out / 'Atestados').write_text('um arquivo com o nome da subpasta', encoding='utf-8')
+        result = exporter.export_batch(lote, out)
+        self.assertEqual(result.count, 1)  # o outro arquivo saiu
+        self.assertEqual([path for path, _reason in result.failures], [first])
 
     def test_review_files_are_exported_too_but_blocked_ones_are_not(self):
         lote = self.make_ready_batch(3)

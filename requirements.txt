@@ -1,6 +1,9 @@
 PyMuPDF==1.26.4
-opencv-python==4.11.0.86
+opencv-python-headless==4.11.0.86
 pytesseract==0.3.13
 Pillow==13.0.0
 numpy==2.2.6
-PySide6-Essentials==6.12.0
+# PySide6 6.11.3, e nao a 6.12.0: na 6.12.0 um widget posto num layout montado a parte (addLayout) continua
+# "do Python" mesmo dentro da janela, e o processo pode cair ao fechar; no Python 3.11, cada Signal.emit()
+# ainda gasta uma referencia do True ate o processo cair. Os testes de tests/test_packaging.py acusam os dois.
+PySide6-Essentials==6.11.3

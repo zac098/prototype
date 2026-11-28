@@ -39,7 +39,14 @@ class LimitsTests(unittest.TestCase):
         self.assertEqual(config.MAX_BATCH_PAGES, 1000)
         self.assertEqual(config.MAX_FILE_SIZE_MB, 100)
         self.assertEqual(config.LARGE_FILE_WARNING_MB, 30)
-        self.assertEqual(config.PARALLEL_WORKERS, 4)
+        self.assertTrue(2 <= config.PARALLEL_WORKERS <= 8)
+
+    def test_parallel_readings_follow_the_cpu_cores(self):
+        # até 4 núcleos: uma leitura por núcleo (mínimo 2); acima, um núcleo livre para a janela, até 8
+        expected = {None: 4, 1: 2, 2: 2, 3: 3, 4: 4, 6: 5, 8: 7, 12: 8, 64: 8}
+        for cpus, workers in expected.items():
+            with self.subTest(cpus=cpus):
+                self.assertEqual(config.analysis_workers(cpus), workers)
 
     def test_output_formats(self):
         self.assertEqual(config.OUTPUT_FORMATS, ('PDF', 'PNG', 'JPEG', 'JPG', 'WEBP', 'BMP', 'TIFF'))

@@ -13,10 +13,10 @@ import re
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QDir, QLockFile, QObject, Signal
+from PySide6.QtCore import QDir, QLockFile, QObject, Signal, Slot
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
-from rdf.pdftools import sources
+from rdf.pdftools import formats
 
 LOGGER = logging.getLogger('rdf')
 PRINT_FLAG = '--imprimir'
@@ -38,7 +38,7 @@ def files_from_args(argv):
     found = []
     for raw in args[args.index(PRINT_FLAG) + 1 :]:
         path = Path(raw)
-        if sources.is_supported(path) and path.is_file():
+        if formats.is_supported(path) and path.is_file():
             found.append(str(path.resolve()))
     return found
 
@@ -76,7 +76,8 @@ class InstanceServer(QObject):
         self._server = QLocalServer(self)
         self._server.setSocketOptions(QLocalServer.UserAccessOption)
         self._server.newConnection.connect(self._on_connection)
-        self._buffers = {}
+        self._buffers = {}  # nome da conexão -> bytes recebidos até agora
+        self._count = 0
         self.listening = False  # False depois do listen(): a trava é nossa, mas o canal não abriu
         self._lock = QLockFile(str(Path(QDir.tempPath()) / f'{self.name}.lock'))
         self._lock.setStaleLockTime(
@@ -101,19 +102,34 @@ class InstanceServer(QObject):
         self._server.close()
         self._lock.unlock()
 
+    # Os pedidos ficam guardados pelo nome que cada conexão recebe, nunca pelo objeto Python da conexão: a conexão é
+    # criada e apagada pelo Qt, e guardar o objeto (num dicionário ou num lambda ligado aos sinais dela) mantinha vivo
+    # um "embrulho" Python de uma conexão já apagada. Quando o Qt criava a próxima conexão no mesmo endereço de
+    # memória, ela recebia esse embrulho velho, e o RDF fechava sozinho ao receber arquivos.
     def _on_connection(self):
         while self._server.hasPendingConnections():
             socket = self._server.nextPendingConnection()
-            self._buffers[socket] = b''
-            socket.readyRead.connect(
-                lambda s=socket: self._buffers.__setitem__(s, self._buffers[s] + bytes(s.readAll()))
-            )
-            socket.disconnected.connect(lambda s=socket: self._finish(s))
+            self._count += 1
+            key = f'pedido-{self._count}'
+            socket.setObjectName(key)
+            self._buffers[key] = b''
+            socket.readyRead.connect(self._on_ready_read)
+            socket.disconnected.connect(self._on_disconnected)
 
-    def _finish(self, socket):
-        if socket not in self._buffers:  # o pedido já foi tratado
+    @Slot()
+    def _on_ready_read(self):
+        socket = self.sender()
+        key = socket.objectName() if socket is not None else ''
+        if key in self._buffers:
+            self._buffers[key] += bytes(socket.readAll())
+
+    @Slot()
+    def _on_disconnected(self):
+        socket = self.sender()
+        key = socket.objectName() if socket is not None else ''
+        if key not in self._buffers:  # o pedido já foi tratado
             return
-        data = self._buffers.pop(socket) + bytes(socket.readAll())
+        data = self._buffers.pop(key) + bytes(socket.readAll())
         socket.deleteLater()
         try:
             files = [str(item) for item in json.loads(data.decode('utf-8')).get('files', [])]

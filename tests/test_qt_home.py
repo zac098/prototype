@@ -179,8 +179,10 @@ class ThemeAndDialogTests(HomeTestCase):
     def test_about_and_shortcuts_dialogs_build(self):
         from rdf.qt import app_dialogs
 
+        from rdf import APP_VERSION
+
         about = app_dialogs.about_dialog(self.window, None)
-        self.assertIn('4.0', about.findChildren(type(self.home.empty_label))[1].text())
+        self.assertIn(APP_VERSION, about.findChildren(type(self.home.empty_label))[1].text())
         shortcuts = app_dialogs.shortcuts_dialog(self.window)
         texts = [label.text() for label in shortcuts.findChildren(type(self.home.empty_label))]
         self.assertIn('F1', texts)

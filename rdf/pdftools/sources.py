@@ -27,16 +27,33 @@ from PIL import Image, ImageOps
 
 from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import ops
+from rdf.pdftools.formats import (
+    ALL_EXTENSIONS,
+    EXCEL_EXTENSIONS,
+    HTML_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    MUPDF_EXTENSIONS,
+    OFFICE_EXTENSIONS,
+    POWERPOINT_EXTENSIONS,
+    TEXT_EXTENSIONS,
+    WORD_EXTENSIONS,
+    extension,
+    is_supported,
+)
 
-IMAGE_EXTENSIONS = ops.IMAGE_EXTENSIONS
-TEXT_EXTENSIONS = {'.txt', '.md', '.csv', '.log', '.json', '.xml'}
-HTML_EXTENSIONS = {'.html', '.htm'}
-MUPDF_EXTENSIONS = {'.svg', '.cbz'}
-WORD_EXTENSIONS = {'.doc', '.docx', '.rtf', '.odt'}
-EXCEL_EXTENSIONS = {'.xls', '.xlsx'}
-POWERPOINT_EXTENSIONS = {'.ppt', '.pptx'}
-OFFICE_EXTENSIONS = WORD_EXTENSIONS | EXCEL_EXTENSIONS | POWERPOINT_EXTENSIONS
-ALL_EXTENSIONS = {'.pdf'} | IMAGE_EXTENSIONS | TEXT_EXTENSIONS | HTML_EXTENSIONS | MUPDF_EXTENSIONS | OFFICE_EXTENSIONS
+__all__ = [  # os formatos continuam acessíveis por aqui (sources.ALL_EXTENSIONS etc.)
+    'ALL_EXTENSIONS',
+    'EXCEL_EXTENSIONS',
+    'HTML_EXTENSIONS',
+    'IMAGE_EXTENSIONS',
+    'MUPDF_EXTENSIONS',
+    'OFFICE_EXTENSIONS',
+    'POWERPOINT_EXTENSIONS',
+    'TEXT_EXTENSIONS',
+    'WORD_EXTENSIONS',
+    'extension',
+    'is_supported',
+]
 
 LOGGER = logging.getLogger('rdf')
 
@@ -118,10 +135,6 @@ TEXT_MAX_MB = 20  # texto e HTML são lidos inteiros e viram muitas páginas
 MAX_IMAGE_PIXELS = 100_000_000
 
 
-def extension(path):
-    return Path(path).suffix.lower()
-
-
 def size_error(path):
     """Mensagem pronta se o arquivo é grande demais para as ferramentas; None se está dentro do limite."""
     try:
@@ -138,10 +151,6 @@ def pixels_error(width, height, name):
     if width * height > MAX_IMAGE_PIXELS:
         return f'"{name}" tem {width * height / 1_000_000:.0f} milhões de pixels; o limite é {MAX_IMAGE_PIXELS // 1_000_000}.'
     return None
-
-
-def is_supported(path):
-    return extension(path) in ALL_EXTENSIONS
 
 
 def is_slow(path):

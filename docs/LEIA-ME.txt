@@ -1,17 +1,18 @@
 RDF - FERRAMENTAS DE PDF E RENOMEADOR DE FOLHAS - PACOTE PARA AVALIAÇÃO INSTITUCIONAL
-Versão 4.0.2
+Versão 4.1.0
 
 FINALIDADE
 Caixa de ferramentas de PDF que funciona offline (unir, dividir, comprimir, converter, girar, proteger, tarjar dados pessoais e outras), incluindo o renomeador de folhas de ponto, atestados e declarações.
 Ferramenta interna de automacao documental com OCR, classificacao, revisao humana, visualizacao e exportacao de documentos.
 
-ALTERACOES DESTA EDICAO (4.0.0)
-- Tema claro, escuro ou igual ao Windows; tela inicial com favoritas, recentes, filtros e busca sem acentos.
-- Seis ferramentas novas: Tarjar dados (LGPD), Metadados do PDF, PDF para texto, Escala de cinza, Varias paginas por folha e Ajustar tamanho do papel.
-- Miniaturas para escolher e reordenar paginas; arrastar para mudar a ordem dos arquivos em Unir PDF.
-- Renomeador ate 4x mais rapido no OCR, com status em cores, busca no lote e "Proximo a revisar" (F3).
-- Configuracoes, Sobre e lista de atalhos (F1). Python 3.11 ou superior.
-- Historico completo em docs/CHANGELOG.md; termos de uso em docs/termos; instalador e script de build em packaging/.
+ALTERACOES DESTA EDICAO (4.1.0)
+- Abre bem mais rapido: o RDF instalado e uma pasta (nada e descompactado a cada abertura) e a tela inicial nao carrega mais o OCR.
+- Download menor, sem bibliotecas que o RDF nao usa.
+- Atualizacao dentro do app: aviso na tela inicial, download conferido (SHA-256) e instalacao em um clique.
+- Visual mais limpo: icones proprios, nome e icone no topo de cada ferramenta, botao Voltar discreto.
+- Correcoes: a janela podia fechar sozinha depois de varios "Imprimir com o RDF"; Configuracoes cortavam textos.
+- Autoteste do executavel (RDF.exe --autoteste resultado.json) rodado no build de cada versao.
+- Historico completo em docs/CHANGELOG.md; termos de uso em docs/termos; instalador e receita do build em packaging/.
 
 INICIO RAPIDO
 1. Instale Python 3.11 ou superior, as dependencias de requirements.txt e o Tesseract OCR.

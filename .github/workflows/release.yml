@@ -1,7 +1,8 @@
 name: Instalador
 
-# Gera o RDF.exe (PyInstaller) e o RDF_Setup.exe (Inno Setup) numa máquina Windows, com o Tesseract (por e eng)
-# embutido, como o packaging/build_package.bat faz no computador de quem empacota.
+# Gera o RDF (PyInstaller, receita em packaging/rdf.spec) e o RDF_Setup.exe (Inno Setup) numa máquina Windows, com o
+# Tesseract (por e eng) embutido, como o packaging/build_package.bat faz no computador de quem empacota. Antes de
+# publicar, cada entrega roda o próprio autoteste (RDF.exe --autoteste): OCR de verdade, PDFs e todas as telas.
 # - Na main, com uma APP_VERSION que ainda não tem release (ou com uma tag "v4.0.0" enviada à mão): cria a tag e a
 #   release no GitHub com os dois .exe e o SHA-256. Versão já publicada: não faz nada.
 # - Manual (Actions > Instalador > Run workflow) ou num PR que mexa no empacotamento: só gera os arquivos para baixar.
@@ -17,6 +18,8 @@ on:
       - 'packaging/**'
       - 'requirements*.txt'
       - 'rdf_app.py'
+      - 'rdf/**'
+      - 'assets/**'
 
 permissions:
   contents: write
@@ -24,6 +27,7 @@ permissions:
 jobs:
   instalador:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -84,20 +88,39 @@ jobs:
       - name: Dependências
         run: python -m pip install -r requirements.txt -r requirements-build.txt
 
-      - name: RDF.exe (PyInstaller)
+      - name: RDF (PyInstaller) - pasta para o instalador e versão portátil
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name RDF `
-            --exclude-module tkinter --exclude-module tkinterdnd2 `
-            --exclude-module PySide6.QtWebEngineCore --exclude-module PySide6.QtWebEngineWidgets `
-            --exclude-module PySide6.QtQml --exclude-module PySide6.QtQuick --exclude-module PySide6.QtQuickWidgets `
-            --exclude-module PySide6.QtSql --exclude-module PySide6.QtTest `
-            --exclude-module PySide6.QtPdf --exclude-module PySide6.QtPdfWidgets `
-            --collect-all cv2 --collect-all fitz `
-            --add-binary "$env:TESSERACT_DIR;Tesseract-OCR" `
-            --add-data "assets\icone.ico;assets" --icon "assets\icone.ico" rdf_app.py
-          if (-not (Test-Path dist\RDF.exe)) { throw 'O PyInstaller não gerou o dist\RDF.exe' }
-          Write-Host ("RDF.exe: {0:N1} MB" -f ((Get-Item dist\RDF.exe).Length / 1MB))
+          python -m PyInstaller --noconfirm --clean packaging\rdf.spec
+          foreach ($file in 'dist\RDF\RDF.exe', 'dist\RDF_portatil.exe') {
+            if (-not (Test-Path $file)) { throw "O PyInstaller não gerou o $file" }
+          }
+
+      - name: Tamanho do pacote
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem dist\RDF -Recurse -File
+          $base = (Resolve-Path dist\RDF).Path
+          Write-Host ("Pasta instalada: {0:N1} MB em {1} arquivos" -f (($files | Measure-Object Length -Sum).Sum / 1MB), $files.Count)
+          Write-Host ("Portátil: {0:N1} MB" -f ((Get-Item dist\RDF_portatil.exe).Length / 1MB))
+          $files | Sort-Object Length -Descending | Select-Object -First 30 | ForEach-Object {
+            "{0,8:N1} MB  {1}" -f ($_.Length / 1MB), $_.FullName.Substring($base.Length + 1)
+          }
+
+      - name: Autoteste do app empacotado
+        shell: pwsh
+        run: |
+          foreach ($exe in 'dist\RDF\RDF.exe', 'dist\RDF_portatil.exe') {
+            $report = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetFileNameWithoutExtension($exe) + '-autoteste.json')
+            $process = Start-Process -FilePath $exe -ArgumentList '--autoteste', $report -PassThru
+            $null = $process.Handle  # sem isto o PowerShell pode perder o código de saída
+            if (-not $process.WaitForExit(600000)) {
+              Stop-Process -Id $process.Id -Force
+              throw "O autoteste de $exe não terminou em 10 minutos"
+            }
+            if (Test-Path $report) { Get-Content $report -Encoding utf8 | Write-Host } else { Write-Host "Sem relatório em $report" }
+            if ($process.ExitCode -ne 0) { throw "O autoteste de $exe falhou (código $($process.ExitCode))" }
+          }
 
       - name: RDF_Setup.exe (Inno Setup)
         shell: pwsh
@@ -106,8 +129,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'O Inno Setup falhou' }
           New-Item -ItemType Directory -Force entrega | Out-Null
           Copy-Item installer_output\RDF_Setup.exe "entrega\RDF_Setup_$env:APP_VERSION.exe"
-          Copy-Item dist\RDF.exe "entrega\RDF_portatil_$env:APP_VERSION.exe"
+          Copy-Item dist\RDF_portatil.exe "entrega\RDF_portatil_$env:APP_VERSION.exe"
           Push-Location entrega
+          Get-ChildItem *.exe | ForEach-Object { Write-Host ("{0}: {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) }
           Get-ChildItem *.exe | ForEach-Object {
             "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name
           } | Set-Content -Encoding ascii SHA256SUMS.txt

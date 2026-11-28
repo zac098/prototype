@@ -13,7 +13,11 @@ import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from rdf.pdftools import ops
+from rdf.core.lazy import LazyModule
+from rdf.pdftools import choices
+
+# As operações só são carregadas quando uma ferramenta roda: a tela inicial monta o catálogo sem o PyMuPDF.
+ops = LazyModule('rdf.pdftools.ops')
 
 # Categorias, na ordem em que aparecem na tela inicial.
 CATEGORIES = ('Folha de ponto', 'Organizar', 'Otimizar', 'Converter', 'Editar', 'Segurança')
@@ -197,7 +201,7 @@ TOOLS = (
     _tool(
         'merge',
         'Unir PDF',
-        'Junte vários PDFs (ou fotos e documentos) em um único arquivo, na ordem que você escolher, ou imprima a lista direto pela janela de impressão do Windows.',
+        'Junte vários PDFs (ou fotos e documentos) em um só arquivo, na ordem que você escolher, ou abra tudo junto no Edge para imprimir.',
         'Organizar',
         '+',
         _run_merge,
@@ -306,7 +310,7 @@ TOOLS = (
                 'Nível de compressão',
                 'choice',
                 'Recomendada',
-                tuple(ops.COMPRESSION_LEVELS),
+                tuple(choices.COMPRESSION_LEVELS),
                 help='Extrema reduz mais, mas deixa as imagens com menos qualidade.',
             ),
         ),
@@ -334,7 +338,7 @@ TOOLS = (
         action='Reconhecer texto',
         keywords='ocr escaneado pesquisavel reconhecer texto tesseract',
         options=(
-            Option('language', 'Idioma do documento', 'choice', 'Português + Inglês', tuple(ops.OCR_LANGUAGES)),
+            Option('language', 'Idioma do documento', 'choice', 'Português + Inglês', tuple(choices.OCR_LANGUAGES)),
             Option(
                 'quality', 'Qualidade', 'choice', 'Normal (mais rápido)', ('Normal (mais rápido)', 'Alta (mais lento)')
             ),
@@ -353,7 +357,7 @@ TOOLS = (
         action='Criar PDF',
         keywords='jpg png foto imagem converter para pdf',
         options=(
-            Option('page_size', 'Tamanho da página', 'choice', 'A4', tuple(ops.PAGE_SIZES)),
+            Option('page_size', 'Tamanho da página', 'choice', 'A4', tuple(choices.PAGE_SIZES)),
             Option(
                 'orientation',
                 'Orientação',
@@ -362,7 +366,7 @@ TOOLS = (
                 ('Automática', 'Retrato', 'Paisagem'),
                 visible_if=('page_size', ('A4', 'Carta')),
             ),
-            Option('margin', 'Margem', 'choice', 'Pequena', tuple(ops.MARGINS)),
+            Option('margin', 'Margem', 'choice', 'Pequena', tuple(choices.MARGINS)),
         ),
     ),
     _tool(
@@ -436,7 +440,7 @@ TOOLS = (
         action='Girar PDF',
         keywords='rotacionar virar girar rotate',
         options=(
-            Option('angle', 'Girar', 'choice', '90° para a direita', tuple(ops.ROTATIONS)),
+            Option('angle', 'Girar', 'choice', '90° para a direita', tuple(choices.ROTATIONS)),
             Option('scope', 'Quais páginas', 'choice', 'Todas as páginas', ('Todas as páginas', 'Só algumas páginas')),
             Option('pages', 'Páginas', 'text', '', help=PAGES_HELP, visible_if=('scope', 'Só algumas páginas')),
         ),
@@ -469,8 +473,8 @@ TOOLS = (
         action='Adicionar números',
         keywords='numerar paginar numeracao',
         options=(
-            Option('position', 'Posição', 'choice', 'Inferior centralizado', ops.NUMBER_POSITIONS),
-            Option('style', 'Formato', 'choice', 'Página 1 de N', ops.NUMBER_FORMATS),
+            Option('position', 'Posição', 'choice', 'Inferior centralizado', choices.NUMBER_POSITIONS),
+            Option('style', 'Formato', 'choice', 'Página 1 de N', choices.NUMBER_FORMATS),
             Option('first', 'Primeiro número', 'int', 1),
             Option('start', 'Começar na página', 'int', 1),
             Option('size', 'Tamanho da letra', 'int', 10),
@@ -489,7 +493,7 @@ TOOLS = (
         options=(
             Option('text', 'Texto', 'text', 'CONFIDENCIAL'),
             Option('angle', 'Direção', 'choice', 'Diagonal', ('Diagonal', 'Horizontal')),
-            Option('color', 'Cor', 'choice', 'Cinza', tuple(ops.WATERMARK_COLORS)),
+            Option('color', 'Cor', 'choice', 'Cinza', tuple(choices.WATERMARK_COLORS)),
             Option('size', 'Tamanho da letra', 'int', 60),
             Option('opacity', 'Intensidade (%)', 'int', 30, help='De 5 (quase invisível) a 100 (forte).'),
         ),
@@ -515,7 +519,7 @@ TOOLS = (
         suffix='_ajustado',
         action='Ajustar páginas',
         keywords='redimensionar tamanho papel a4 carta oficio escala padronizar',
-        options=(Option('paper', 'Papel', 'choice', 'A4', tuple(ops.PAPER_SIZES)),),
+        options=(Option('paper', 'Papel', 'choice', 'A4', tuple(choices.PAPER_SIZES)),),
     ),
     _tool(
         'protect',
