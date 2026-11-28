@@ -4,7 +4,7 @@
 
 ### Mais rápido e mais leve
 - **Abre bem mais rápido.** O RDF instalado agora é uma pasta, e não mais um arquivo único de 200 MB que era descompactado inteiro a cada abertura. A tela inicial também deixou de carregar o OCR, o OpenCV e o PyMuPDF: eles são preparados em segundo plano logo depois que a janela aparece, e a primeira ferramenta abre sem espera.
-- **Download bem menor**: o instalador caiu de 197 MB para cerca de 78 MB, e a versão portátil de 206 MB para cerca de 110 MB. Saíram do pacote cópias repetidas das bibliotecas do Tesseract, programas de treino do Tesseract, OpenGL por software, vídeo do OpenCV, suporte a AVIF, traduções que não são pt-BR e arquivos de desenvolvimento.
+- **Download bem menor**: o instalador caiu de 197 MB para 77 MB, e a versão portátil de 206 MB para 109 MB. Saíram do pacote cópias repetidas das bibliotecas do Tesseract, programas de treino do Tesseract, OpenGL por software, vídeo do OpenCV, suporte a AVIF, traduções que não são pt-BR e arquivos de desenvolvimento.
 
 ### Atualização dentro do app
 - O RDF avisa na tela inicial quando sai uma versão nova. **Atualizar…** mostra as novidades, baixa o instalador, confere que ele chegou inteiro (soma SHA-256 publicada na versão), fecha o RDF com as perguntas de sempre e instala, abrindo o app de novo no fim, com as mesmas configurações. Também em Ajuda > Procurar atualizações, no Sobre e nas Configurações, onde a procura automática pode ser desligada. A procura só consulta o GitHub do RDF: nada seu é enviado. Na versão portátil, o aviso abre a página da versão.
