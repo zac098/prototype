@@ -151,6 +151,8 @@ Type: filesandordirs; Name: "{localappdata}\RDF"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; Atualizacao feita pelo proprio RDF (instalador em modo silencioso): no fim, abre o app de novo sozinho.
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
 
 [Code]
 // O proprio RDF tambem liga e desliga o inicio automatico (menu da bandeja), entao o valor pode existir

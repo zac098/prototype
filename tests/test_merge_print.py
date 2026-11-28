@@ -126,6 +126,11 @@ class MergePrintTests(unittest.TestCase):
         patcher = mock.patch.object(config, 'CONVERT_DIR', self.tmp / 'convertidos')
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Sem o Edge: estes testes cobrem a tela de impressão do RDF (no Windows, com o Edge instalado, o "Imprimir"
+        # abriria o Edge de verdade no meio dos testes).
+        no_edge = mock.patch('rdf.qt.print_dialog.edge_path', return_value=None)
+        no_edge.start()
+        self.addCleanup(no_edge.stop)
         from rdf.pdftools.registry import TOOLS_BY_ID
         from rdf.qt.merge_page import MergePage
 

@@ -112,9 +112,11 @@ def _open(path):
 
 
 class SettingsDialog(QDialog):
-    """Configurações do RDF. themeChanged avisa a janela para aplicar o tema escolhido."""
+    """Configurações do RDF. themeChanged avisa a janela para aplicar o tema escolhido; updatesRequested pede uma
+    procura de atualização agora."""
 
     themeChanged = Signal(str)
+    updatesRequested = Signal()
 
     def __init__(self, parent=None, tesseract=None):
         super().__init__(parent)
@@ -158,6 +160,23 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.autostart)
         if not autostart.supported():
             layout.addWidget(_hint('Disponível só no Windows.'))
+
+        layout.addWidget(_separator())
+        layout.addWidget(_section('Atualizações'))
+        updates_row = QHBoxLayout()
+        self.check_updates = QCheckBox('Procurar versões novas automaticamente')
+        self.check_updates.setChecked(prefs.get('check_updates'))
+        self.check_updates.toggled.connect(lambda value: settings.current().set('check_updates', value))
+        updates_row.addWidget(self.check_updates, 1)
+        self.updates_button = QPushButton('Procurar agora')
+        self.updates_button.clicked.connect(self.updatesRequested)
+        updates_row.addWidget(self.updates_button)
+        layout.addLayout(updates_row)
+        layout.addWidget(
+            _hint(
+                f'Você está usando a versão {APP_VERSION}. A procura só consulta o GitHub do RDF; nada seu é enviado.'
+            )
+        )
 
         layout.addWidget(_separator())
         layout.addWidget(_section('OCR (Tesseract)'))
@@ -238,7 +257,7 @@ def library_versions():
     return found
 
 
-def about_dialog(parent=None, tesseract=None):
+def about_dialog(parent=None, tesseract=None, on_check_updates=None):
     dialog, layout = _dialog(parent, 'Sobre o RDF', 480)
     head = QHBoxLayout()
     head.setSpacing(14)
@@ -286,6 +305,11 @@ def about_dialog(parent=None, tesseract=None):
     logs = QPushButton('Abrir pasta do log')
     logs.clicked.connect(lambda: _open(config.LOG_DIR))
     row.addWidget(logs)
+    if on_check_updates is not None:
+        check = QPushButton('Procurar atualizações')
+        check.clicked.connect(on_check_updates)
+        row.addWidget(check)
+        dialog.updates_button = check
     row.addStretch(1)
     close = QPushButton('Fechar')
     close.setProperty('variant', 'primary')

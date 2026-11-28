@@ -2,6 +2,7 @@
 
 import importlib
 import logging
+import shutil
 import sys
 import threading
 from pathlib import Path
@@ -18,6 +19,7 @@ from rdf.qt import errors, theme
 from rdf.qt.single_instance import InstanceServer, files_from_args, send_to_running
 from rdf.qt.theme import FONT_FAMILY
 from rdf.qt.tray import TrayController
+from rdf.qt.updater import DOWNLOAD_DIR
 from rdf.qt.window import MainWindow
 
 _translator = None  # a tradução do Qt instalada (uma só vez, mesmo com create_app chamado de novo)
@@ -121,6 +123,7 @@ def main(argv=None):
     theme.apply(app, settings.load(SETTINGS_FILE).get('theme'))
     if first:  # só o primeiro processo é dono das pastas temporárias
         sweep_stale_data()
+        shutil.rmtree(DOWNLOAD_DIR, ignore_errors=True)  # o instalador da última atualização já foi usado
     app.setQuitOnLastWindowClosed(False)  # quem encerra é a janela ao fechar de verdade (ou o "Sair" da bandeja)
     window = MainWindow()
     tray = TrayController(window) if TrayController.available() else None
@@ -133,6 +136,7 @@ def main(argv=None):
     if files:
         window.receive_print_files(files)
     QTimer.singleShot(PRELOAD_DELAY_BACKGROUND_MS if background else PRELOAD_DELAY_MS, preload_in_background)
+    window.updater.start()  # procura versão nova daqui a pouco (se o usuário não desligou nas Configurações)
     return app.exec()
 
 

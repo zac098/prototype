@@ -20,6 +20,7 @@ from rdf.core.config import resource_path
 from rdf.pdftools.registry import TOOLS_BY_ID
 from rdf.qt import app_dialogs, theme
 from rdf.qt.home import HomePage
+from rdf.qt.updater import UpdateController, UpdateDialog, launch_installer
 
 APP_TITLE = f'RDF - Ferramentas de PDF v{APP_VERSION}'
 PREFERRED_SIZE = (1500, 940)
@@ -74,7 +75,16 @@ class MainWindow(QMainWindow):
         self.home.settingsRequested.connect(self.show_settings)
         self.home.aboutRequested.connect(self.show_about)
         self.home.shortcutsRequested.connect(self.show_shortcuts)
+        self.home.updatesRequested.connect(self.check_for_updates)
+        self.home.updateRequested.connect(self.show_update_dialog)
         self.stack.addWidget(self.home)
+        # Atualizações: a procura automática só começa com updater.start() (o __main__ chama; os testes, não).
+        self.updater = UpdateController(self)
+        self.updater.available.connect(self.on_update_available)
+        self.updater.upToDate.connect(self.on_up_to_date)
+        self.updater.failed.connect(self.on_update_failed)
+        self._open_update_when_found = False  # procura pedida pelo usuário: abre os detalhes assim que achar
+        self._update_announced = None  # versão já avisada pela bandeja (uma vez por versão)
         row.addWidget(self.stack, 1)
 
         for sequence, handler in (
@@ -122,6 +132,7 @@ class MainWindow(QMainWindow):
     def make_settings_dialog(self):
         dialog = app_dialogs.SettingsDialog(self, app_dialogs.tesseract_path())
         dialog.themeChanged.connect(lambda mode: theme.apply(None, mode))
+        dialog.updatesRequested.connect(self.check_for_updates)
         return dialog
 
     def show_settings(self):
@@ -130,7 +141,62 @@ class MainWindow(QMainWindow):
         self.home.sync()  # "Limpar favoritas e recentes" muda a tela inicial
 
     def show_about(self):
-        app_dialogs.about_dialog(self, app_dialogs.tesseract_path()).exec()
+        app_dialogs.about_dialog(self, app_dialogs.tesseract_path(), self.check_for_updates).exec()
+
+    # ---- atualizações ----------------------------------------------------------------------
+    def check_for_updates(self):
+        """Procura agora (menu de ajuda, Sobre, Configurações): avisa também quando não há novidade ou internet."""
+        self._open_update_when_found = True
+        self.updater.check(manual=True)
+
+    def on_update_available(self, release):
+        self.home.show_update(release)
+        if self._open_update_when_found:
+            self._open_update_when_found = False
+            self.show_update_dialog()
+        elif not self.isVisible() and self.tray is not None and self._update_announced != release.version:
+            self._update_announced = release.version
+            self.tray.show_message(
+                'Nova versão do RDF', f'A versão {release.version} está disponível. Abra o RDF para atualizar.'
+            )
+
+    def on_up_to_date(self):
+        self._open_update_when_found = False
+        self.show_notice('Atualizações', f'Você já está com a versão mais nova do RDF ({APP_VERSION}).')
+
+    def on_update_failed(self, message):
+        self._open_update_when_found = False
+        QMessageBox.warning(self, 'Atualizações', f'Não foi possível procurar atualizações agora.\n\n{message}')
+
+    def make_update_dialog(self, release):
+        return UpdateDialog(release, self)
+
+    def show_update_dialog(self):
+        """Detalhes da versão nova; se o usuário escolher instalar, fecha o RDF e roda o instalador."""
+        release = self.updater.release
+        if release is None:
+            return None
+        dialog = self.make_update_dialog(release)
+        dialog.exec()
+        if dialog.install_now and dialog.installer:
+            self.install_update(dialog.installer)
+        return dialog
+
+    def install_update(self, installer):
+        """Fecha o RDF com as conferências de sempre (tarefa em andamento, trabalho não salvo) e roda o instalador,
+        que abre o app de novo no fim. False se o RDF continuou aberto ou o instalador não abriu."""
+        if not self.quit_app():
+            self.show_notice(
+                'Atualização adiada',
+                'O RDF continuou aberto, então a versão nova não foi instalada. O aviso continua na tela inicial.',
+            )
+            return False
+        try:
+            launch_installer(installer)
+        except OSError as exc:
+            QMessageBox.critical(None, 'Atualização', f'Não foi possível abrir o instalador.\n\n{exc}')
+            return False
+        return True
 
     def show_shortcuts(self):
         app_dialogs.shortcuts_dialog(self).exec()

@@ -29,6 +29,17 @@ def _check_libraries():
     return f'PyMuPDF {fitz.VersionBind}, Pillow {PIL.__version__}, numpy {numpy.__version__}, OpenCV {cv2.__version__}, pytesseract {pytesseract.__version__}'
 
 
+def _check_secure_connection():
+    """A atualização baixa do GitHub por HTTPS: o executável precisa do módulo ssl e dos certificados do sistema."""
+    import ssl
+
+    context = ssl.create_default_context()
+    authorities = context.cert_store_stats().get('x509_ca', 0)
+    if not authorities:
+        raise RuntimeError('Nenhum certificado de autoridade carregado: a atualização pelo GitHub não funcionaria')
+    return f'{ssl.OPENSSL_VERSION}, {authorities} certificados de autoridade'
+
+
 def _sample_image(scale=3):
     """Uma imagem (numpy RGB) com SAMPLE_TEXT em letra grande, feita pelo próprio PyMuPDF."""
     import fitz
@@ -129,6 +140,7 @@ def _check_interface():
 
 CHECKS = (
     ('bibliotecas', _check_libraries),
+    ('conexão segura', _check_secure_connection),
     ('tesseract', _check_tesseract),
     ('ferramentas de PDF', None),  # recebe a pasta temporária
     ('interface', _check_interface),

@@ -77,6 +77,10 @@ class QtPrintCase(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name)
         self.out = self.tmp / 'saida.pdf'
+        # Sem o Edge de verdade: no Windows ele está instalado e o "Imprimir" o abriria no meio dos testes.
+        no_edge = mock.patch('rdf.qt.print_dialog.edge_path', return_value=None)
+        no_edge.start()
+        self.addCleanup(no_edge.stop)
 
     def printer(self):
         from PySide6.QtPrintSupport import QPrinter

@@ -33,8 +33,8 @@ class SelfTestRunTests(unittest.TestCase):
             )
             report = json.loads(report_file.read_text(encoding='utf-8'))
         checks = {item['nome']: item for item in report['verificacoes']}
-        self.assertEqual(set(checks), {'bibliotecas', 'tesseract', 'ferramentas de PDF', 'interface'})
-        for name in ('bibliotecas', 'ferramentas de PDF', 'interface'):
+        self.assertEqual(set(checks), {'bibliotecas', 'conexão segura', 'tesseract', 'ferramentas de PDF', 'interface'})
+        for name in ('bibliotecas', 'conexão segura', 'ferramentas de PDF', 'interface'):
             self.assertTrue(checks[name]['ok'], checks[name])
         self.assertIn('RenamerPage', checks['interface']['detalhe'])  # todas as telas abriram
         if shutil.which('tesseract'):  # com o Tesseract, a leitura de verdade também passa

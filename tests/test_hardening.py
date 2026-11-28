@@ -218,6 +218,10 @@ class DeliveryTests(unittest.TestCase):
             self.assertIn(step, ci)
         self.assertIn('QT_QPA_PLATFORM: offscreen', ci)
         self.assertIn('coverage', (ROOT / 'requirements-dev.txt').read_text(encoding='utf-8'))
+        # No PowerShell só o último comando do passo contava: uma falha dos testes no Windows passava calada.
+        for step in ('- name: Lint', '- name: Testes com cobertura'):
+            block = ci.split(step, 1)[1].split('- name:', 1)[0]
+            self.assertIn('shell: bash', block, step)
 
     def test_the_build_leaves_out_what_the_app_does_not_use(self):
         spec = (ROOT / 'packaging' / 'rdf.spec').read_text(encoding='utf-8')
