@@ -47,11 +47,11 @@ from rdf.core.batch import FILTERS, Batch, read_session_file, row_from_result, s
 from rdf.core.config import OUTPUT_FORMATS
 from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.core.io_files import INPUT_EXTENSIONS
-from rdf.qt import dialogs, theme
+from rdf.qt import dialogs, icons, theme
 from rdf.qt.busy import Responsive
 from rdf.qt.preview import PageLoader, PreviewView
 from rdf.qt.theme import COLORS
-from rdf.qt.widgets import BackButton, BrandMark
+from rdf.qt.widgets import BackButton, DropIcon
 
 LOGGER = logging.getLogger('rdf')
 
@@ -296,6 +296,8 @@ class RenamerPage(QWidget):
         self.select_files_btn.clicked.connect(self.select_files)
         self.select_folder_btn = QPushButton('Selecionar pasta')
         self.select_folder_btn.clicked.connect(self.select_folder)
+        icons.set_themed_icon(self.select_files_btn, 'add', 'ink', 16)
+        icons.set_themed_icon(self.select_folder_btn, 'folder', 'ink', 16)
         step1.addWidget(self.select_files_btn)
         step1.addWidget(self.select_folder_btn)
 
@@ -307,6 +309,8 @@ class RenamerPage(QWidget):
         self.analyze_btn.clicked.connect(lambda: self.start_analysis())
         self.verify_btn = QPushButton('Verificar selecionados')
         self.verify_btn.clicked.connect(lambda: self.start_analysis(selected_only=True))
+        icons.set_themed_icon(self.analyze_btn, 'ocr', 'on_brand', 16)
+        icons.set_themed_icon(self.verify_btn, 'check', 'ink', 16)
         step2.addWidget(self.analyze_btn)
         step2.addWidget(self.verify_btn)
 
@@ -336,6 +340,7 @@ class RenamerPage(QWidget):
         self.format_combo.setToolTip('Formato dos arquivos exportados')
         self.format_combo.setAccessibleName('Formato dos arquivos exportados')
         self.format_combo.textActivated.connect(self.on_format_changed)
+        icons.set_themed_icon(self.export_btn, 'download', 'on_brand', 16)
         export_row.addWidget(self.export_btn, 1)
         export_row.addWidget(self.format_combo)
         step3.addLayout(approve_row)
@@ -474,21 +479,24 @@ class RenamerPage(QWidget):
         """Lote vazio: um convite para arrastar os documentos, no lugar de uma tabela em branco."""
         zone = QFrame()
         zone.setObjectName('dropzone')
+        # Sem alinhar o layout inteiro (setAlignment): isso o encolhia à largura "sugerida" e os textos com quebra de
+        # linha ficavam um por cima do outro. Os textos ocupam a largura toda, centralizados; as pilhas de cima e de
+        # baixo centralizam na vertical.
         layout = QVBoxLayout(zone)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(24, 16, 24, 16)
         layout.setSpacing(8)
         layout.addStretch(1)
-        layout.addWidget(BrandMark(56), 0, Qt.AlignHCenter)
+        layout.addWidget(DropIcon(), 0, Qt.AlignHCenter)  # o mesmo convite das outras ferramentas
         title = QLabel('Arraste aqui as folhas de ponto, atestados e declarações')
         title.setObjectName('cardTitle')
         title.setWordWrap(True)
         title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title, 0, Qt.AlignHCenter)
+        layout.addWidget(title)
         hint = QLabel('PDF ou imagens (JPG, PNG, TIFF, BMP, WEBP). Também dá para soltar uma pasta inteira.')
         hint.setObjectName('hint')
         hint.setWordWrap(True)
         hint.setAlignment(Qt.AlignCenter)
-        layout.addWidget(hint, 0, Qt.AlignHCenter)
+        layout.addWidget(hint)
         row = QHBoxLayout()
         row.setSpacing(8)
         row.addStretch(1)
@@ -497,13 +505,17 @@ class RenamerPage(QWidget):
         add.clicked.connect(self.select_files)
         folder = QPushButton('Selecionar pasta')
         folder.clicked.connect(self.select_folder)
+        icons.set_themed_icon(add, 'add', 'on_brand', 16)
+        icons.set_themed_icon(folder, 'folder', 'ink', 16)
         row.addWidget(add)
         row.addWidget(folder)
         row.addStretch(1)
         layout.addLayout(row)
         steps = QLabel('1. Adicione  ·  2. Analise  ·  3. Confira e exporte com os nomes novos')
         steps.setObjectName('hint')
-        layout.addWidget(steps, 0, Qt.AlignHCenter)
+        steps.setWordWrap(True)
+        steps.setAlignment(Qt.AlignCenter)
+        layout.addWidget(steps)
         layout.addStretch(1)
         return zone
 

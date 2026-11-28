@@ -28,7 +28,26 @@ MAX_BATCH_FILES = 300
 MAX_BATCH_PAGES = 1000
 MAX_FILE_SIZE_MB = 100
 LARGE_FILE_WARNING_MB = 30
-PARALLEL_WORKERS = 4
+
+
+def analysis_workers(cpus):
+    """Quantas folhas o renomeador lê ao mesmo tempo (cada leitura usa um núcleo: o Tesseract roda com uma thread).
+
+    Medido com as 20 folhas de teste: 1 leitura de cada vez levou 67 s, 2 levaram 39 s e 4, 20 s. Ou seja, o ganho
+    acompanha os núcleos. Até 4 núcleos, uma leitura por núcleo (no mínimo 2). Com mais, um núcleo fica livre para a
+    janela continuar leve, e o teto é 8 (cada Tesseract usa uns 200 MB de memória)."""
+    cpus = int(cpus or 4)
+    if cpus <= 4:
+        return max(2, cpus)
+    return min(8, cpus - 1)
+
+
+def _cpu_count():
+    counter = getattr(os, 'process_cpu_count', None) or os.cpu_count  # process_cpu_count respeita a afinidade (3.13+)
+    return counter() or 4
+
+
+PARALLEL_WORKERS = analysis_workers(_cpu_count())
 
 SESSION_MAX_AGE_DAYS = 7  # a sessão guarda nomes e matrículas: não fica no disco para sempre
 TEMP_FOLDER_MAX_AGE_SECONDS = 3600  # pasta temporária de ferramenta parada há mais que isto é sobra de um app que caiu
@@ -158,7 +177,7 @@ OMP_THREADS = '1'  # o RDF já lê vários arquivos em paralelo: cada Tesseract 
 def configure_tesseract(base_dir):
     """Localiza o Tesseract instalado no usuario ou em pastas comuns, sem admin.
 
-    Também limita cada Tesseract a uma thread do OpenMP (se o usuário não escolheu outro valor): com quatro leituras
+    Também limita cada Tesseract a uma thread do OpenMP (se o usuário não escolheu outro valor): com várias leituras
     em paralelo, cada uma criando uma thread por núcleo, as threads disputavam a CPU e a leitura ficava dezenas de
     vezes mais lenta. É a recomendação da documentação do Tesseract para rodar vários ao mesmo tempo."""
     os.environ.setdefault('OMP_THREAD_LIMIT', OMP_THREADS)

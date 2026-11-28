@@ -98,21 +98,41 @@ def edit_dialog(parent, row):
     form.setHorizontalSpacing(14)
     form.setVerticalSpacing(10)
     chapa = QLineEdit(row.get('chapa') or '')
+    chapa.setObjectName('editChapa')
     nome = QLineEdit(row.get('nome') or '')
+    nome.setObjectName('editNome')
     mes = QComboBox()
+    mes.setObjectName('editMes')
     mes.addItems(['', *MONTH_OPTIONS])
-    mes.setCurrentText(str(row.get('mes') or '').upper())
+    current = str(row.get('mes') or '').strip().upper()
+    if current and mes.findText(current) < 0:
+        # Mês fora da lista (sessão antiga, "MARCO" sem cedilha...): fica como opção, para salvar não apagá-lo.
+        mes.addItem(current)
+    mes.setCurrentText(current)
     form.addRow('Matrícula/Chapa:', chapa)
     form.addRow('Nome:', nome)
     form.addRow('Mês da folha:', mes)
     layout.addLayout(form)
+    note = QLabel('Preencha ao menos um dos campos.')
+    note.setObjectName('hint')
+    layout.addWidget(note)
     buttons = QDialogButtonBox()
     save = buttons.addButton('Salvar correção', QDialogButtonBox.AcceptRole)
     save.setProperty('variant', 'primary')
+    save.setObjectName('saveCorrection')
     cancel = buttons.addButton('Cancelar', QDialogButtonBox.RejectRole)
     save.clicked.connect(dialog.accept)
     cancel.clicked.connect(dialog.reject)
     layout.addWidget(buttons)
+
+    def update_save():
+        filled = any(text.strip() for text in (chapa.text(), nome.text(), mes.currentText()))
+        save.setEnabled(filled)  # uma correção sem nada viraria "CORRIGIDO" com o nome original
+        note.setVisible(not filled)
+
+    for signal in (chapa.textChanged, nome.textChanged, mes.currentTextChanged):
+        signal.connect(update_save)
+    update_save()
     chapa.setFocus()
     if dialog.exec() != QDialog.Accepted:
         return None

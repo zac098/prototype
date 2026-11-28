@@ -246,8 +246,10 @@ class ToolPage(QWidget):
         tool = self.tool
         self.dropzone = QFrame()
         self.dropzone.setObjectName('dropzone')
+        # Sem alinhar o layout inteiro (setAlignment): isso encolhia os textos à largura "sugerida" e os com quebra de
+        # linha ficavam numa coluna estreita ou um por cima do outro. Os textos ocupam a largura toda, centralizados.
         layout = QVBoxLayout(self.dropzone)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(24, 16, 24, 16)
         layout.setSpacing(6)
         layout.addStretch(1)
         self.drop_icon = DropIcon()
@@ -273,11 +275,10 @@ class ToolPage(QWidget):
         )
         if tool.any_format and tool.inputs == 'pdf':
             hint.setText(hint.text() + '\nAceita PDF, imagens, textos, HTML e documentos do Word, Excel e PowerPoint.')
-            hint.setWordWrap(True)
-            hint.setAlignment(Qt.AlignCenter)
-            hint.setFixedWidth(400)  # largura fixa: com quebra de linha, o Qt deixava o texto numa coluna estreita
+        hint.setWordWrap(True)
+        hint.setAlignment(Qt.AlignCenter)
         hint.setObjectName('hint')
-        layout.addWidget(hint, 0, Qt.AlignHCenter)
+        layout.addWidget(hint)
         layout.addStretch(1)
         return self.dropzone
 
