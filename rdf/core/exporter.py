@@ -7,6 +7,7 @@ Nunca sobrescreve: se o nome já existe, acrescenta (2), (3)... Atestados e decl
 import logging
 import os
 import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -19,6 +20,35 @@ from rdf.core.naming import safe_filename
 
 LOGGER = logging.getLogger('rdf')
 EXPORTABLE_STATUSES = READY_STATUSES | {'REVISAR'}
+
+# O Windows (sem a opção de caminhos longos, desligada na maioria dos computadores) não grava um arquivo cujo caminho
+# inteiro passa disto. O nome do arquivo é encurtado para caber na pasta escolhida.
+WINDOWS_MAX_PATH = 259
+MIN_NAME_ROOM = 24  # com menos espaço que isto o nome não diria mais nada: melhor pedir uma pasta mais curta
+NUMBER_RESERVE = len(' (999)')  # o número que entra quando o nome já existe
+PAGE_RESERVE = len(' - PÁGINA 001')  # exportando em imagens, cada página ganha isto no nome
+
+
+class ExportPathError(OSError):
+    """A pasta escolhida tem um caminho longo demais para caber qualquer nome de arquivo."""
+
+
+def fit_base(destination, base, extension, output_format, limit=None):
+    """O nome (sem extensão) encurtado para o caminho inteiro caber no limite do Windows, mantendo o começo (a
+    matrícula). Fora do Windows não há limite prático e o nome fica como está."""
+    limit = limit if limit is not None else (WINDOWS_MAX_PATH if sys.platform == 'win32' else 0)
+    if not limit:
+        return base
+    reserve = NUMBER_RESERVE + (0 if output_format.upper() == 'PDF' else PAGE_RESERVE)
+    room = limit - len(str(destination)) - 1 - len(extension) - 1 - reserve
+    if room < MIN_NAME_ROOM:
+        raise ExportPathError(
+            f'A pasta escolhida tem um caminho longo demais para o Windows ({len(str(destination))} caracteres). '
+            'Escolha uma pasta mais perto do início do disco, como C:\\Exportados.'
+        )
+    if len(base) <= room:
+        return base
+    return base[:room].rstrip(' .-')
 
 
 @dataclass
@@ -128,18 +158,19 @@ def export_batch(batch, out_dir, output_format=None, progress=None):
         if category not in CATEGORY_LABELS:  # a sessão é um arquivo editável: nada de subpasta inventada
             category = None
         destination = out / category if category else out
-        destination.mkdir(parents=True, exist_ok=True)
-        candidate, number = base, 2
-        while True:
-            target = destination / f'{candidate}.{extension}'
-            planned = planned_export_paths(path, target, fmt)
-            # Uma chave por arquivo planejado, na mesma ordem: cada destino é conferido no lote e no disco.
-            keys = [str(p.relative_to(out)).lower() for p in planned]
-            if all(key not in used and not p.exists() for key, p in zip(keys, planned)):
-                break
-            candidate = f'{base} ({number})'
-            number += 1
         try:
+            destination.mkdir(parents=True, exist_ok=True)
+            base = fit_base(destination, base, extension, fmt)
+            candidate, number = base, 2
+            while True:
+                target = destination / f'{candidate}.{extension}'
+                planned = planned_export_paths(path, target, fmt)
+                # Uma chave por arquivo planejado, na mesma ordem: cada destino é conferido no lote e no disco.
+                keys = [str(p.relative_to(out)).lower() for p in planned]
+                if all(key not in used and not p.exists() for key, p in zip(keys, planned)):
+                    break
+                candidate = f'{base} ({number})'
+                number += 1
             made = export_source(path, target, fmt)
             used.update(str(p.relative_to(out)).lower() for p in made)
             result.count += len(made)
