@@ -6,4 +6,4 @@
 - python -m rdf: abre o aplicativo
 """
 
-APP_VERSION = "4.0.2"
+APP_VERSION = "4.1.0"

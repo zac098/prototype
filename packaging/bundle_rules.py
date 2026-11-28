@@ -12,6 +12,10 @@ from pathlib import Path, PurePosixPath
 DROP_EXACT = {
     'pyside6/opengl32sw.dll',  # OpenGL por software (~20 MB): as telas do RDF não usam OpenGL
     'pyside6/d3dcompiler_47.dll',  # compilador de shaders do Direct3D, pelo mesmo motivo
+    # OpenSSL que o PyInstaller junta para o HTTPS do Qt (plugins tls, também fora): o RDF baixa atualizações pelo
+    # Python, que usa o OpenSSL dele (libcrypto-3.dll e libssl-3.dll, sem o "-x64"). O autoteste confere o HTTPS.
+    'libcrypto-3-x64.dll',
+    'libssl-3-x64.dll',
 }
 DROP_PREFIXES = (
     'cv2/opencv_videoio_ffmpeg',  # vídeo no OpenCV (~27 MB): o RDF só lê imagens

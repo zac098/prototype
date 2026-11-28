@@ -1,6 +1,6 @@
 #define MyAppName "Renomeador de Folhas (RDF)"
 #ifndef MyAppVersion
-  #define MyAppVersion "4.0.2"
+  #define MyAppVersion "4.1.0"
 #endif
 #define MyAppPublisher "RENAPSI"
 #define MyAppExeName "RDF.exe"

@@ -11,7 +11,7 @@ por texto embutido ou OCR (Tesseract) e renomear os arquivos com revisão humana
 | Categoria | Ferramentas |
 |---|---|
 | Folha de ponto | Renomear folhas de ponto (matrícula, nome e mês; atestados e declarações) |
-| Organizar | Unir (com botão Imprimir, pela janela de impressão do Windows), Dividir, Remover páginas, Extrair páginas, Organizar páginas |
+| Organizar | Unir (com botão Imprimir, que abre tudo junto no Microsoft Edge), Dividir, Remover páginas, Extrair páginas, Organizar páginas |
 | Otimizar | Comprimir, Reparar, OCR (PDF pesquisável) |
 | Converter | Imagem para PDF, PDF para imagem (páginas em JPG/PNG ou imagens embutidas), PDF para texto (.txt) |
 | Editar | Girar, Cortar margens, Números de página, Marca d'água, Escala de cinza, Ajustar tamanho do papel |
@@ -23,6 +23,7 @@ Organizar) preenche o campo de páginas, e digitar no campo marca as miniaturas.
 ### Interface
 
 - Tema **claro, escuro ou igual ao Windows** (troca na hora; contraste conferido nos dois temas pelos testes).
+- Ícones vetoriais próprios (`rdf/qt/icons.py`), nítidos em qualquer escala de tela e iguais em qualquer Windows.
 - Tela inicial com **favoritas** (estrela ou Ctrl+D), **usadas recentemente**, filtros por categoria e busca que não
   diferencia acentos. Enter abre o primeiro resultado e as setas andam entre as ferramentas.
 - **Configurações** (Ctrl+,), **Sobre** e **atalhos do teclado** (F1). A janela volta com o tamanho e a posição da
@@ -44,6 +45,11 @@ Na página **Releases** do repositório, baixe o `RDF_Setup_<versão>.exe` da ve
 administrador e atualiza a versão anterior mantendo as configurações. O `RDF_portatil_<versão>.exe` roda sem instalar
 (mas sem o "Imprimir com o RDF" no botão direito). O Tesseract já vem dentro dos dois. O `SHA256SUMS.txt` serve para
 conferir que o arquivo baixado é o original.
+
+Depois de instalado, o próprio RDF avisa quando sai uma versão nova (aviso na tela inicial; também em Ajuda >
+Procurar atualizações). Ele baixa o instalador, confere o SHA-256 publicado na release, fecha e instala em modo
+silencioso, abrindo de novo no fim (`rdf/core/updates.py`, `rdf/qt/updater.py`). A procura só consulta a API de
+releases do GitHub e pode ser desligada nas Configurações. Na versão portátil, o aviso abre a página da versão.
 
 ### Publicar uma versão nova
 
@@ -97,8 +103,19 @@ a ela (`rdf/qt/single_instance.py`).
 ## Gerar o instalador
 
 Execute `packaging\build_package.bat`. Ele precisa de Python, Tesseract e Inno Setup instalados, cria o
-`.venv_build`, gera `dist\RDF.exe` com o PyInstaller (a partir de `rdf_app.py`), monta o instalador
-com `packaging\installer.iss` e entrega tudo em `RDF_DELIVERY_PACKAGE\` com o hash SHA-256.
+`.venv_build` e roda o PyInstaller com a receita `packaging\rdf.spec`, que gera numa só análise:
+
+- `dist\RDF\` (pasta com `RDF.exe` e `_internal`): é o que o instalador copia. Abre rápido, porque nada é
+  descompactado a cada abertura;
+- `dist\RDF_portatil.exe`: um arquivo só, para usar sem instalar.
+
+O que fica de fora do pacote (e por quê) está em `packaging\bundle_rules.py`: OpenGL por software, vídeo do OpenCV,
+plugins sem uso do Qt, traduções que não são pt-BR, arquivos de desenvolvimento e, do Tesseract, tudo o que o
+`tesseract.exe` não carrega (as DLLs são escolhidas pelo cabeçalho dos arquivos). Depois o script roda
+`RDF.exe --autoteste` (bibliotecas, leitura real do Tesseract embutido, ferramentas de PDF, conexão segura e todas as
+telas), monta o instalador com `packaging\installer.iss` e entrega tudo em `RDF_DELIVERY_PACKAGE\` com o hash SHA-256.
+O workflow `.github/workflows/release.yml` faz o mesmo num Windows do GitHub e só publica a versão se o autoteste das
+duas entregas passar.
 
 A versão fica em um único lugar: `APP_VERSION` em `rdf/__init__.py`. O build lê a versão desse arquivo,
 e o teste `tests/test_release.py` confere se o `installer.iss` está igual.
@@ -108,21 +125,28 @@ e o teste `tests/test_release.py` confere se o `installer.iss` está igual.
 ```
 rdf/
 ├── __init__.py          APP_VERSION
-├── __main__.py          python -m rdf: abre o app em Qt
+├── __main__.py          python -m rdf: abre o app em Qt (ou roda o autoteste, com --autoteste)
+├── selftest.py          autoteste do app empacotado: bibliotecas, Tesseract, PDF, conexão segura e telas
 ├── core/                renomeador de folhas, sem interface
 │   ├── batch.py         o lote: arquivos, linhas, status, nomes, sessão, busca e "próximo a revisar"
 │   ├── settings.py      preferências do usuário (tema, favoritas, recentes, janela), gravadas com segurança
+│   ├── updates.py       atualização pelo GitHub: última versão, download e conferência do SHA-256
+│   ├── lazy.py          módulos carregados só no primeiro uso (abertura rápida)
 │   ├── inputs.py        entrada de arquivos: limites, conversão de imagens, separação de páginas
 │   ├── analysis_runner.py  leitura em paralelo, com cancelamento
 │   ├── exporter.py      exportação com nomes novos, sem nunca sobrescrever
 │   └── ocr.py, parsing.py, classifier.py, naming.py ...  leitura e classificação dos documentos
 ├── pdftools/            ferramentas de PDF, sem interface
 │   ├── ops.py           as operações (unir, dividir, comprimir, girar, proteger, ...)
+│   ├── formats.py       formatos aceitos (leve: usado pela tela inicial e pelo menu do botão direito)
+│   ├── choices.py       listas das opções das ferramentas (tamanhos de papel, níveis de compressão...)
 │   ├── pages.py         leitura (e escrita) de intervalos como "1-3, 5, 8-"
 │   ├── jobs.py          destinos sem colisão, valores das opções, execução e resumo
 │   └── registry.py      catálogo: opções de cada ferramenta e a operação que executa
 └── qt/                  janela Qt
     ├── theme.py         paletas clara e escura, folha de estilo e troca de tema em tempo real
+    ├── icons.py         ícones vetoriais do RDF (SVG), na cor do tema
+    ├── updater.py       aviso de versão nova, janela de download e instalação
     ├── home.py          tela inicial (busca, favoritas, recentes, filtros)
     ├── tool_page.py     tela padrão das ferramentas (montada a partir do catálogo)
     ├── page_picker.py   miniaturas para escolher e reordenar páginas
@@ -133,7 +157,7 @@ rdf/
 tests/                   testes de comportamento (unittest)
 assets/                  ícone do aplicativo
 docs/                    histórico de versões, leia-me e termos de uso (docs/termos)
-packaging/               script de build e instalador (Inno Setup)
+packaging/               receita do PyInstaller (rdf.spec), regras do pacote, script de build e instalador
 ```
 
 ### Como criar uma ferramenta nova

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 from rdf import APP_VERSION
 from rdf.core import settings
 from rdf.pdftools.registry import CATEGORIES, NEW_TOOLS, TOOLS_BY_ID, search_tools
-from rdf.qt import theme
+from rdf.qt import icons, theme
 from rdf.qt.updater import UpdateBanner
 from rdf.qt.widgets import BrandMark, SearchBar, SmoothScrollArea, ToolRow, icon_button
 
@@ -85,9 +85,17 @@ class HomePage(QWidget):
         self.empty_label.hide()
         body.addWidget(self.empty_label)
         body.addSpacing(12)
-        note = QLabel('🔒  Os arquivos são processados neste computador e não saem dele.')
+        privacy = QHBoxLayout()
+        privacy.setSpacing(8)
+        self.privacy_icon = QLabel()
+        self.privacy_icon.setFixedSize(16, 16)
+        privacy.addWidget(self.privacy_icon)
+        note = QLabel('Os arquivos são processados neste computador e não saem dele.')
         note.setObjectName('hint')
-        body.addWidget(note)
+        privacy.addWidget(note)
+        privacy.addStretch(1)
+        body.addLayout(privacy)
+        self.update_privacy_icon()
         body.addStretch(1)
         self.scroll.setWidget(content)
 
@@ -168,6 +176,11 @@ class HomePage(QWidget):
     def update_theme_button(self, *_args):
         mode = theme.current_mode()
         self.theme_button.setToolTip(f'Tema: {THEME_LABELS.get(mode, mode)}')
+        self.update_privacy_icon()
+
+    def update_privacy_icon(self):
+        if hasattr(self, 'privacy_icon'):  # o cabeçalho é montado antes do rodapé
+            self.privacy_icon.setPixmap(icons.pixmap('shield', 16, theme.COLORS['faint'], self.devicePixelRatioF()))
 
     def theme_menu(self):
         menu = QMenu(self)

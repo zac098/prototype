@@ -31,6 +31,7 @@ class KeepRulesTests(unittest.TestCase):
             r'pymupdf\mupdf-devel\lib\mupdfcpp64.lib',
             r'pymupdf\mupdf-devel\include\mupdf\fitz.h',
             r'PIL\_avif.cp313-win_amd64.pyd',
+            'libcrypto-3-x64.dll',  # OpenSSL do Qt (o HTTPS do RDF é pelo Python)
         ):
             with self.subTest(dest=dest):
                 self.assertFalse(bundle_rules.should_keep(dest))
@@ -48,6 +49,8 @@ class KeepRulesTests(unittest.TestCase):
             r'pymupdf\mupdfcpp64.dll',
             r'Tesseract-OCR\tesseract.exe',
             'assets/icone.ico',
+            'libcrypto-3.dll',  # OpenSSL do Python (_ssl): a atualização usa
+            'libssl-3.dll',
         ):
             with self.subTest(dest=dest):
                 self.assertTrue(bundle_rules.should_keep(dest))

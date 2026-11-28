@@ -1,5 +1,33 @@
 # Histórico de alterações
 
+## 4.1.0 - Abre mais rápido, atualiza sozinho e visual mais limpo
+
+### Mais rápido e mais leve
+- **Abre bem mais rápido.** O RDF instalado agora é uma pasta, e não mais um arquivo único de 200 MB que era descompactado inteiro a cada abertura. A tela inicial também deixou de carregar o OCR, o OpenCV e o PyMuPDF: eles são preparados em segundo plano logo depois que a janela aparece, e a primeira ferramenta abre sem espera.
+- **Download bem menor**: o instalador caiu de 197 MB para cerca de 78 MB, e a versão portátil de 206 MB para cerca de 110 MB. Saíram do pacote cópias repetidas das bibliotecas do Tesseract, programas de treino do Tesseract, OpenGL por software, vídeo do OpenCV, suporte a AVIF, traduções que não são pt-BR e arquivos de desenvolvimento.
+
+### Atualização dentro do app
+- O RDF avisa na tela inicial quando sai uma versão nova. **Atualizar…** mostra as novidades, baixa o instalador, confere que ele chegou inteiro (soma SHA-256 publicada na versão), fecha o RDF com as perguntas de sempre e instala, abrindo o app de novo no fim, com as mesmas configurações. Também em Ajuda > Procurar atualizações, no Sobre e nas Configurações, onde a procura automática pode ser desligada. A procura só consulta o GitHub do RDF: nada seu é enviado. Na versão portátil, o aviso abre a página da versão.
+
+### Visual mais limpo
+- **Ícones novos**, desenhados para o RDF: nítidos em qualquer escala de tela e iguais em qualquer Windows.
+- Cada ferramenta mostra no topo **o ícone, o nome e a descrição** (antes o nome sumia ao adicionar arquivos). O botão Voltar ficou discreto e a tela vazia ganhou um convite para arrastar os arquivos.
+- O contorno de foco só aparece quando você usa o teclado (Tab), e não mais ao clicar.
+- Os botões padrão (Sim/Não) e o menu de copiar e colar dos campos de texto agora em português.
+
+### Correções
+- Depois de vários "Imprimir com o RDF" seguidos, a janela do RDF podia **fechar sozinha**: o canal entre os processos reaproveitava um objeto já apagado.
+- A janela de Configurações cortava os textos e espremia o botão Fechar.
+- Imprimir pela tela do RDF (sem o Edge) deixava a cópia temporária para trás no Windows, porque o PDF da prévia ficava aberto.
+- Salvar a sessão do renomeador falhava se a pasta de dados fosse apagada com o app aberto.
+- Fechar o RDF nunca espera a rede (uma procura de atualização lenta não segura o fechamento).
+- Os textos do "Unir PDF" ainda falavam da janela de impressão do Windows.
+
+### Por dentro
+- **Autoteste do executável** (`RDF.exe --autoteste resultado.json`): confere as bibliotecas, uma leitura real do Tesseract embutido, as ferramentas de PDF, a conexão segura e todas as telas. Roda no build de cada versão; se falhar, a versão não é publicada.
+- O CI do Windows escondia falhas dos testes (no PowerShell só o último comando contava). Agora o lint e os testes rodam em bash nos dois sistemas, e os testes da impressão não abrem mais o Microsoft Edge de verdade.
+- Receita do PyInstaller em `packaging/rdf.spec`, com o que fica de fora explicado em `packaging/bundle_rules.py`. OpenCV na versão sem interface gráfica.
+
 ## 4.0.2
 - "Unir PDF" > **Imprimir…** abre o PDF juntado direto no Microsoft Edge, para imprimir pela tela de impressão dele (Ctrl+P), com prévia e todas as opções. A cópia fica na pasta temporária do RDF e é apagada ao sair do "Unir PDF" ou fechar o app. Sem o Edge no computador, abre a tela de impressão do próprio RDF.
 
