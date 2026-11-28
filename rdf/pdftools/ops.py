@@ -9,6 +9,7 @@ import io
 import os
 import re
 import secrets
+import shutil
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -290,9 +291,17 @@ def compress_pdf(source, dest, level='Recomendada', progress=_noop):
             _recompress_images(document, max_side, quality, progress)
         progress(0.95, 'Gravando o PDF')
         document.save(temp, garbage=4, deflate=True, deflate_images=True, deflate_fonts=True, clean=True)
+        unchanged = Path(temp).stat().st_size >= before
+        if unchanged:
+            # Comprimir nunca entrega um arquivo maior que o original: a saída vira uma cópia exata dele. Decidido antes
+            # de trocar o destino, então vale também para quem salva por cima do próprio arquivo.
+            shutil.copyfile(source, temp)
     after = Path(dest).stat().st_size
-    if after >= before:
-        return Result([Path(dest)], f'O arquivo já estava otimizado ({human_size(before)}); o tamanho quase não mudou.')
+    if unchanged:
+        return Result(
+            [Path(dest)],
+            f'O arquivo já estava otimizado ({human_size(before)}): o resultado é uma cópia do original, sem perda.',
+        )
     saved = round(100 * (before - after) / before)
     return Result([Path(dest)], f'De {human_size(before)} para {human_size(after)} (redução de {saved}%).')
 

@@ -24,6 +24,9 @@
 - A janela de Configurações cortava os textos e espremia o botão Fechar.
 - Corrigir dados (renomeador): um mês fora da lista ("MARCO" sem cedilha, de uma sessão antiga) aparecia em branco e era apagado ao salvar a correção do nome. E uma correção com todos os campos vazios virava "CORRIGIDO" com o nome original: agora "Salvar correção" só funciona com algum campo preenchido.
 - Na tela vazia do renomeador, o título ficava por cima da dica.
+- **Comprimir PDF** nunca entrega um arquivo maior que o original: um PDF que já estava otimizado podia sair um pouco maior. Agora, se não der para reduzir, o resultado é uma cópia exata do original.
+- **Exportar** (renomeador): numa pasta funda, nome + pasta passavam do limite de 260 caracteres do Windows e o arquivo não era gravado; agora o nome encolhe para caber (mantendo a matrícula no começo). Um erro numa subpasta ou num PDF danificado não interrompe mais a exportação dos outros arquivos.
+- Os campos de número (cópias, margens, tamanho da letra) mostravam o número colado na borda.
 - Imprimir pela tela do RDF (sem o Edge) deixava a cópia temporária para trás no Windows, porque o PDF da prévia ficava aberto.
 - Salvar a sessão do renomeador falhava se a pasta de dados fosse apagada com o app aberto.
 - Fechar o RDF nunca espera a rede (uma procura de atualização lenta não segura o fechamento).

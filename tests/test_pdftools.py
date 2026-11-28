@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import _source  # coloca a raiz do projeto no sys.path
@@ -215,6 +216,29 @@ class OperationTests(unittest.TestCase):
         self.assertLess((self.tmp / 'light.pdf').stat().st_size, heavy.stat().st_size * 0.6)
         self.assertIn('redução', result.message)
         self.assertEqual(len(page_texts(self.tmp / 'light.pdf')), 1)
+
+    def test_compress_never_hands_back_a_bigger_file(self):
+        """Um PDF já otimizado podia sair maior (a regravação acrescenta estruturas); a mensagem dizia "quase não mudou".
+        Agora a saída é uma cópia exata do original, inclusive salvando por cima dele."""
+        lean = self.tmp / 'enxuto.pdf'
+        document = fitz.open()
+        document.new_page().insert_text((72, 72), 'Só texto')
+        document.save(lean, garbage=4, deflate=True)
+        document.close()
+        original = lean.read_bytes()
+        with mock.patch.object(ops.fitz.Document, 'save', autospec=True, side_effect=self.bloated_save):
+            result = ops.compress_pdf(lean, self.tmp / 'saida.pdf')
+        self.assertEqual((self.tmp / 'saida.pdf').read_bytes(), original)
+        self.assertIn('cópia do original', result.message)
+        with mock.patch.object(ops.fitz.Document, 'save', autospec=True, side_effect=self.bloated_save):
+            ops.compress_pdf(lean, lean)  # por cima do próprio arquivo
+        self.assertEqual(lean.read_bytes(), original)
+
+    @staticmethod
+    def bloated_save(document, filename, **_options):
+        """Grava um PDF maior que o original (o caso que precisava de proteção): o próprio original com sobras."""
+        data = Path(document.name).read_bytes()
+        Path(filename).write_bytes(data + b'%' + b'x' * (len(data) + 1024) + b'\n')
 
     def test_repair_rewrites_a_damaged_file(self):
         good = self.pdf('a.pdf', 2)
