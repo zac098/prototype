@@ -131,11 +131,11 @@ class HomePage(QWidget):
         row.addWidget(self.search, 100)
         row.addStretch(1)
 
-        self.theme_button = icon_button(0xE793, '◐', 'Tema')
+        self.theme_button = icon_button('theme', 'Tema')
         self.theme_button.clicked.connect(self.show_theme_menu)
-        self.settings_button = icon_button(0xE713, '⚙', 'Configurações (Ctrl+,)')
+        self.settings_button = icon_button('settings', 'Configurações (Ctrl+,)')
         self.settings_button.clicked.connect(self.settingsRequested)
-        self.help_button = icon_button(0xE897, '?', 'Ajuda (F1)')
+        self.help_button = icon_button('help', 'Ajuda (F1)')
         self.help_button.clicked.connect(self.show_help_menu)
         for button in (self.theme_button, self.settings_button, self.help_button):
             row.addWidget(button)
@@ -311,7 +311,7 @@ class HomePage(QWidget):
         if focused_id:  # o foco volta para a mesma ferramenta (na seção da categoria, não na das favoritas)
             match = [card for card in self.cards if card.tool.id == focused_id]
             if match:
-                match[-1].setFocus()
+                match[-1].setFocus(Qt.TabFocusReason)  # pelo teclado: mostra o destaque de foco
         return favorite
 
     # ---- teclado -------------------------------------------------------------------------
@@ -322,7 +322,7 @@ class HomePage(QWidget):
 
     def focus_first(self):
         if self.cards:
-            self.cards[0].setFocus()
+            self.cards[0].setFocus(Qt.TabFocusReason)
 
     def move_focus(self, card, dx, dy):
         """Leva o foco para a ferramenta vizinha na direção das setas (subindo da primeira, volta à busca)."""
@@ -342,7 +342,7 @@ class HomePage(QWidget):
             if best_score is None or score < best_score:
                 best, best_score = other, score
         if best is not None:
-            best.setFocus()
+            best.setFocus(Qt.TabFocusReason)
         elif dy < 0:
             self.search.focus_edit()
 

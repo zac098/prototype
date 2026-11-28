@@ -38,10 +38,11 @@ from PySide6.QtWidgets import (
 from rdf.core import config, settings
 from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import jobs, ops, sources
+from rdf.qt import icons
 from rdf.qt.busy import Responsive
 from rdf.qt.page_picker import PagePicker
 from rdf.qt.thumbnails import ThumbnailLoader
-from rdf.qt.widgets import BackButton, SmoothScrollArea, ToolTile
+from rdf.qt.widgets import BackButton, DropIcon, SmoothScrollArea, ToolTile
 
 PREVIEW_SIZE = (230, 300)
 OPTIONS_WIDTH = 380
@@ -205,16 +206,41 @@ class ToolPage(QWidget):
     def _build_files_card(self):
         card = make_card()
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(12)
-        self.back_button = BackButton()
-        self.back_button.clicked.connect(self.backRequested)
-        layout.addWidget(self.back_button, 0, Qt.AlignLeft)
+        layout.setContentsMargins(18, 14, 18, 18)
+        layout.setSpacing(14)
+        layout.addLayout(self._build_header())
         self.files_stack = QStackedWidget()
         layout.addWidget(self.files_stack)
         self.files_stack.addWidget(self._build_empty())
         self.files_stack.addWidget(self._build_listing())
         return card
+
+    def _build_header(self):
+        """Topo da tela: Voltar, o ícone e o nome da ferramenta (fica sempre à vista, com ou sem arquivos)."""
+        tool = self.tool
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.back_button = BackButton()
+        self.back_button.clicked.connect(self.backRequested)
+        row.addWidget(self.back_button, 0, Qt.AlignVCenter)
+        divider = QFrame()
+        divider.setObjectName('vline')
+        divider.setFixedSize(1, 28)
+        row.addWidget(divider, 0, Qt.AlignVCenter)
+        self.header_tile = ToolTile(tool, 38, solid=False)
+        row.addWidget(self.header_tile, 0, Qt.AlignVCenter)
+        texts = QVBoxLayout()
+        texts.setSpacing(1)
+        self.title_label = QLabel(tool.title)
+        self.title_label.setObjectName('cardTitle')
+        self.title_label.setAccessibleName(f'Ferramenta: {tool.title}')
+        self.lead_label = QLabel(tool.description)
+        self.lead_label.setObjectName('hint')
+        self.lead_label.setWordWrap(True)
+        texts.addWidget(self.title_label)
+        texts.addWidget(self.lead_label)
+        row.addLayout(texts, 1)
+        return row
 
     def _build_empty(self):
         tool = self.tool
@@ -224,18 +250,9 @@ class ToolPage(QWidget):
         layout.setAlignment(Qt.AlignCenter)
         layout.setSpacing(6)
         layout.addStretch(1)
-        layout.addWidget(ToolTile(tool, 72), 0, Qt.AlignHCenter)
-        layout.addSpacing(8)
-        title = QLabel(tool.title)
-        title.setObjectName('pageTitle')
-        lead = QLabel(tool.description)
-        lead.setObjectName('pageLead')
-        lead.setWordWrap(True)
-        lead.setAlignment(Qt.AlignCenter)
-        lead.setMaximumWidth(420)
-        layout.addWidget(title, 0, Qt.AlignHCenter)
-        layout.addWidget(lead, 0, Qt.AlignHCenter)
-        layout.addSpacing(18)
+        self.drop_icon = DropIcon()
+        layout.addWidget(self.drop_icon, 0, Qt.AlignHCenter)
+        layout.addSpacing(10)
         drop = QLabel(f'Arraste {self.kind_label} aqui')
         drop.setObjectName('cardTitle')
         layout.addWidget(drop, 0, Qt.AlignHCenter)
@@ -279,9 +296,12 @@ class ToolPage(QWidget):
         self.add_button = small_button('')
         self.add_button.setToolTip('Atalho: Ctrl+O')
         self.add_button.clicked.connect(self.add_dialog)
+        icons.set_themed_icon(self.add_button, 'add', 'ink', 16)
         buttons.addWidget(self.add_button)
         if tool.mode == 'combine' or tool.ordered:
-            self.up_button, self.down_button = small_button('↑'), small_button('↓')
+            self.up_button, self.down_button = small_button(''), small_button('')
+            icons.set_themed_icon(self.up_button, 'up', 'ink', 16)
+            icons.set_themed_icon(self.down_button, 'down', 'ink', 16)
             self.up_button.setAccessibleName('Mover para cima')
             self.down_button.setAccessibleName('Mover para baixo')
             self.up_button.setToolTip('Mover para cima')
@@ -297,6 +317,7 @@ class ToolPage(QWidget):
             buttons.addWidget(self.sort_button)
         self.remove_button = small_button('Remover')
         self.remove_button.setToolTip('Atalho: Delete')
+        icons.set_themed_icon(self.remove_button, 'trash', 'ink', 16)
         self.remove_button.clicked.connect(self.remove_selected)
         self.clear_button = small_button('')
         self.clear_button.clicked.connect(self.clear_files)

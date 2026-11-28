@@ -131,6 +131,7 @@ jobs:
           Copy-Item installer_output\RDF_Setup.exe "entrega\RDF_Setup_$env:APP_VERSION.exe"
           Copy-Item dist\RDF_portatil.exe "entrega\RDF_portatil_$env:APP_VERSION.exe"
           Push-Location entrega
+          Get-ChildItem *.exe | ForEach-Object { Write-Host ("{0}: {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) }
           Get-ChildItem *.exe | ForEach-Object {
             "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower(), $_.Name
           } | Set-Content -Encoding ascii SHA256SUMS.txt

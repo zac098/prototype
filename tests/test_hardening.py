@@ -229,7 +229,7 @@ class DeliveryTests(unittest.TestCase):
             self.assertIn(f"'PySide6.{module}',", spec)
 
     def test_the_app_only_imports_qt_modules_that_ship_in_essentials(self):
-        essentials = {'QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtPrintSupport'}
+        essentials = {'QtCore', 'QtGui', 'QtWidgets', 'QtNetwork', 'QtPrintSupport', 'QtSvg'}  # QtSvg: os ícones
         found = set()
         for path in (ROOT / 'rdf').rglob('*.py'):
             found |= set(re.findall(r'PySide6\.(Qt\w+)', path.read_text(encoding='utf-8')))

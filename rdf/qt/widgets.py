@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from rdf.qt import icons
 from rdf.qt.motion import animations_enabled
 from rdf.qt.theme import COLORS, FONT_FAMILY, ICON_FONT
 
@@ -60,6 +61,12 @@ def paint_tile(painter, rect, tool, fill, ink):
     painter.setBrush(QColor(fill))
     radius = rect.width() * 0.26
     painter.drawRoundedRect(rect, radius, radius)
+    if icons.has(tool.id):  # o desenho próprio do RDF, igual em qualquer Windows
+        side = rect.width() * 0.55
+        icons.paint(
+            painter, QRectF(rect.center().x() - side / 2, rect.center().y() - side / 2, side, side), tool.id, ink
+        )
+        return
     painter.setPen(QColor(ink))
     if tool.icon and has_icon_font():
         painter.setFont(glyph_font(rect.width() * 0.42))
@@ -72,11 +79,18 @@ def paint_tile(painter, rect, tool, fill, ink):
         painter.drawText(rect, Qt.AlignCenter, tool.glyph)
 
 
+KEYBOARD_FOCUS = (Qt.TabFocusReason, Qt.BacktabFocusReason, Qt.ShortcutFocusReason)
+
+
 class _Animated(QWidget):
-    """Base com um "nível" de 0 a 1 que anda suavemente entre repouso e destaque."""
+    """Base com um "nível" de 0 a 1 que anda suavemente entre repouso e destaque.
+
+    O destaque de foco só aparece quando o foco veio do teclado (Tab, setas, atalhos): a tela que abre com o foco no
+    Voltar, ou o clique do mouse, não deixa um contorno aceso parecendo selecionado."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.keyboard_focus = False
         self._level = 0.0
         self._animation = QVariantAnimation(self)
         self._animation.setDuration(HOVER_MS)
@@ -115,6 +129,29 @@ class ToolTile(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         fill, ink = (COLORS['brand'], COLORS['on_brand']) if self.solid else (COLORS['tile'], COLORS['icon'])
         paint_tile(painter, QRectF(self.rect()), self.tool, fill, ink)
+
+
+class DropIcon(QWidget):
+    """Círculo suave com a seta de enviar: o convite para arrastar arquivos na tela vazia de cada ferramenta."""
+
+    def __init__(self, size=76, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(COLORS['brand_soft']))
+        painter.drawEllipse(rect)
+        side = rect.width() * 0.44
+        icons.paint(
+            painter,
+            QRectF(rect.center().x() - side / 2, rect.center().y() - side / 2, side, side),
+            'upload',
+            COLORS['brand'],
+        )
 
 
 class ToolRow(_Animated):
@@ -200,16 +237,20 @@ class ToolRow(_Animated):
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        if not self.hasFocus():
+        if not (self.hasFocus() and self.keyboard_focus):
             self.animate_to(0.0)
         super().leaveEvent(event)
 
     def focusInEvent(self, event):
-        self.animate_to(1.0)
+        self.keyboard_focus = event.reason() in KEYBOARD_FOCUS
+        if self.keyboard_focus:
+            self.animate_to(1.0)
         super().focusInEvent(event)
 
     def focusOutEvent(self, event):
-        self.animate_to(0.0)
+        self.keyboard_focus = False
+        if not self.underMouse():
+            self.animate_to(0.0)
         super().focusOutEvent(event)
 
     def mouseReleaseEvent(self, event):
@@ -295,33 +336,57 @@ class BrandMark(QWidget):
         painter.drawText(rect, Qt.AlignCenter, 'RDF')
 
 
-def icon_button(glyph, fallback, tooltip, parent=None):
-    """Botão só de ícone (fonte de ícones do Windows, ou o símbolo simples), com nome para o leitor de tela."""
-    button = QToolButton(parent)
-    button.setObjectName('iconButton')
-    button.setCursor(Qt.PointingHandCursor)
-    button.setToolTip(tooltip)
-    button.setAccessibleName(tooltip.split(' (')[0])
-    button.setFocusPolicy(Qt.StrongFocus)
-    button.setFixedSize(40, 40)
-    if has_icon_font():
-        button.setText(chr(glyph))
-        button.setFont(glyph_font(16))
-    else:
-        button.setText(fallback)
-        font = QFont(FONT_FAMILY)
-        font.setPixelSize(17)
-        button.setFont(font)
-    return button
+class IconButton(QToolButton):
+    """Botão só de ícone (desenho vetorial do RDF), com nome para o leitor de tela. A cor segue o tema: neutra em
+    repouso e a da marca sob o mouse ou no foco."""
+
+    SIZE = 40
+    ICON = 20
+
+    def __init__(self, name, tooltip, parent=None):
+        super().__init__(parent)
+        self.icon_name = name
+        self._hot = False
+        self.setObjectName('iconButton')
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip(tooltip)
+        self.setAccessibleName(tooltip.split(' (')[0])
+        self.setFocusPolicy(Qt.TabFocus)  # pelo Tab, sim; o clique não deixa o contorno de foco aceso
+        self.setFixedSize(self.SIZE, self.SIZE)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)  # fundo e borda vêm da folha de estilo (QToolButton#iconButton)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        color = COLORS['brand'] if (self._hot or self.hasFocus()) else COLORS['icon']
+        side = self.ICON
+        icons.paint(
+            painter, QRectF((self.width() - side) / 2, (self.height() - side) / 2, side, side), self.icon_name, color
+        )
+
+    def enterEvent(self, event):
+        self._hot = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hot = False
+        self.update()
+        super().leaveEvent(event)
+
+
+def icon_button(name, tooltip, parent=None):
+    """Botão redondo só com o ícone name (ver rdf.qt.icons)."""
+    return IconButton(name, tooltip, parent)
 
 
 class BackButton(_Animated):
-    """Botão de voltar em forma de pílula (seta + "Voltar"): contorno na cor da marca, que preenche sob o mouse.
-    Fica dentro do primeiro cartão de cada tela; em janelas estreitas vira só a seta."""
+    """Botão de voltar discreto (seta + "Voltar"): sem borda em repouso, ganha um fundo suave e a cor da marca sob o
+    mouse. Fica no topo de cada tela; em janelas estreitas vira só a seta."""
 
     clicked = Signal()
-    FULL_SIZE = (104, 40)
-    COMPACT_SIZE = (44, 40)
+    FULL_SIZE = (96, 36)
+    COMPACT_SIZE = (40, 36)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -346,44 +411,45 @@ class BackButton(_Animated):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         level = self.level()
-        rect = QRectF(1, 1, self.width() - 2, self.height() - 2)
-        painter.setPen(QPen(QColor(COLORS['brand']), 2))
-        painter.setBrush(mix(COLORS['surface'], COLORS['brand'], level))
-        painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
-        ink = mix(COLORS['brand'], COLORS['on_brand'], level)
-        pen = QPen(ink, 2.4)
-        pen.setCapStyle(Qt.RoundCap)
-        pen.setJoinStyle(Qt.RoundJoin)
-        painter.setPen(pen)
-        center_y = self.height() / 2
-        tip_x = 16 if not self.compact else (self.width() / 2 - 6)
-        tip = QPointF(tip_x, center_y)
-        painter.drawLine(tip, QPointF(tip_x + 13, center_y))
-        painter.drawLine(tip, QPointF(tip_x + 6, center_y - 6))
-        painter.drawLine(tip, QPointF(tip_x + 6, center_y + 6))
+        rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
+        if level > 0.01:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(mix(COLORS['surface'], COLORS['brand_soft'], level))
+            painter.drawRoundedRect(rect, 10, 10)
+        if self.hasFocus() and self.keyboard_focus:
+            painter.setPen(QPen(QColor(COLORS['brand']), 2))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 9, 9)
+        ink = mix(COLORS['muted'], COLORS['brand'], level)
+        icon_x = 10 if not self.compact else (self.width() - 20) / 2
+        icons.paint(painter, QRectF(icon_x, (self.height() - 20) / 2, 20, 20), 'back', ink)
         if not self.compact:
             font = QFont(FONT_FAMILY)
-            font.setBold(True)
             font.setPointSizeF(10)
+            font.setWeight(QFont.DemiBold)
             painter.setFont(font)
             painter.setPen(ink)
-            painter.drawText(QRectF(36, 0, self.width() - 44, self.height()), Qt.AlignVCenter | Qt.AlignLeft, 'Voltar')
+            painter.drawText(QRectF(36, 0, self.width() - 40, self.height()), Qt.AlignVCenter | Qt.AlignLeft, 'Voltar')
 
     def enterEvent(self, event):
         self.animate_to(1.0)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        if not self.hasFocus():
+        if not (self.hasFocus() and self.keyboard_focus):
             self.animate_to(0.0)
         super().leaveEvent(event)
 
     def focusInEvent(self, event):
-        self.animate_to(1.0)
+        self.keyboard_focus = event.reason() in KEYBOARD_FOCUS
+        if self.keyboard_focus:
+            self.animate_to(1.0)
         super().focusInEvent(event)
 
     def focusOutEvent(self, event):
-        self.animate_to(0.0)
+        self.keyboard_focus = False
+        if not self.underMouse():
+            self.animate_to(0.0)
         super().focusOutEvent(event)
 
     def mouseReleaseEvent(self, event):
@@ -428,11 +494,7 @@ class SearchBar(_Animated):
         self.clear_button.setToolTip('Limpar a busca (Esc)')
         self.clear_button.setAccessibleName('Limpar a busca')  # o texto é só um ícone
         self.clear_button.setAutoRaise(True)
-        if has_icon_font():
-            self.clear_button.setText(chr(0xE711))
-            self.clear_button.setFont(glyph_font(12))
-        else:
-            self.clear_button.setText('×')
+        icons.set_themed_icon(self.clear_button, 'close', 'faint', 16)
         self.clear_button.hide()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(54, 4, 18, 4)
@@ -508,12 +570,9 @@ class SearchBar(_Animated):
         painter.setPen(QPen(mix(COLORS['line_strong'], COLORS['brand'], level), 1))
         painter.setBrush(QColor(COLORS['surface']))
         painter.drawRoundedRect(pill, pill.height() / 2, pill.height() / 2)
-        painter.setPen(mix(COLORS['faint'], COLORS['brand'], level))
-        if has_icon_font():
-            painter.setFont(glyph_font(17))
-            painter.drawText(QRectF(18, 0, 28, height), Qt.AlignCenter, chr(0xE721))
-        else:
-            painter.drawText(QRectF(18, 0, 28, height), Qt.AlignCenter, '⌕')
+        icons.paint(
+            painter, QRectF(22, (height - 20) / 2, 20, 20), 'search', mix(COLORS['faint'], COLORS['brand'], level)
+        )
 
 
 class SmoothScrollArea(QScrollArea):

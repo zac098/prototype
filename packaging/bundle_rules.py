@@ -23,6 +23,8 @@ DROP_PREFIXES = (
     'pyside6/plugins/platforms/qoffscreen',  # telas virtuais (só para testes)
     'pyside6/plugins/platforms/qminimal',
     'pyside6/plugins/platforms/qdirect2d',
+    'pymupdf/mupdf-devel/',  # cabeçalhos e .lib para compilar programas com o MuPDF
+    'pil/_avif',  # imagens AVIF (o RDF não abre esse formato; o Pillow segue sem ele)
 )
 # Das traduções do Qt, só a do português (botões Sim e Não, menu de copiar e colar).
 KEEP_TRANSLATIONS = {'qtbase_pt_br.qm'}
@@ -84,6 +86,17 @@ def dll_closure(folder, start='tesseract.exe', read_imports=pe_imports):
                 needed.add(key)
                 queue.append(available[key])
     return sorted(available[key].name for key in needed)
+
+
+def tesseract_toc(folder, read_imports=pe_imports):
+    """Os arquivos do Tesseract no formato do PyInstaller (destino, origem, tipo), para entrar no pacote DEPOIS da
+    análise: assim o PyInstaller não trata as DLLs do Tesseract como dependências do Python (ele copiava todas também
+    para a pasta principal, uns 50 MB repetidos). O Tesseract roda como programa à parte, da pasta dele."""
+    toc = []
+    for source, dest in tesseract_files(folder, read_imports):
+        kind = 'BINARY' if source.suffix.lower() in ('.exe', '.dll') else 'DATA'
+        toc.append((f'{dest}/{source.name}', str(source), kind))
+    return toc
 
 
 def tesseract_files(folder, read_imports=pe_imports):

@@ -28,6 +28,9 @@ class KeepRulesTests(unittest.TestCase):
             r'PySide6\plugins\platforms\qoffscreen.dll',
             r'PySide6\translations\qtbase_de.qm',
             r'PySide6\translations\qt_help_pt_BR.qm',
+            r'pymupdf\mupdf-devel\lib\mupdfcpp64.lib',
+            r'pymupdf\mupdf-devel\include\mupdf\fitz.h',
+            r'PIL\_avif.cp313-win_amd64.pyd',
         ):
             with self.subTest(dest=dest):
                 self.assertFalse(bundle_rules.should_keep(dest))
@@ -116,6 +119,14 @@ class TesseractTests(unittest.TestCase):
         ):
             self.assertFalse(any(item.endswith('/' + left_out) for item in bundled), left_out)
 
+    def test_the_tesseract_enters_after_the_analysis_with_full_destinations(self):
+        toc = bundle_rules.tesseract_toc(self.folder, read_imports=self.read_imports)
+        entries = {dest: kind for dest, _source, kind in toc}
+        self.assertEqual(entries['Tesseract-OCR/tesseract.exe'], 'BINARY')
+        self.assertEqual(entries['Tesseract-OCR/zlib1.dll'], 'BINARY')
+        self.assertEqual(entries['Tesseract-OCR/tessdata/por.traineddata'], 'DATA')
+        self.assertTrue(all(dest.startswith('Tesseract-OCR/') for dest in entries))  # nada na pasta principal
+
     def test_a_missing_language_stops_the_build(self):
         (self.folder / 'tessdata' / 'por.traineddata').unlink()
         with self.assertRaisesRegex(FileNotFoundError, 'por'):
@@ -129,7 +140,7 @@ class TesseractTests(unittest.TestCase):
 
 class SpecTests(unittest.TestCase):
     def test_both_deliveries_come_from_one_recipe(self):
-        self.assertIn("COLLECT(installed, a.binaries, a.datas, name='RDF'", SPEC)
+        self.assertIn("COLLECT(installed, a.binaries, a.datas + tesseract, name='RDF'", SPEC)
         self.assertIn("name='RDF_portatil'", SPEC)
         self.assertIn('exclude_binaries=True', SPEC)  # a pasta: as bibliotecas ficam ao lado, não dentro do .exe
 
@@ -153,7 +164,9 @@ class SpecTests(unittest.TestCase):
         self.assertTrue(third_party <= {'fitz', 'PIL', 'numpy', 'cv2', 'pytesseract'})  # todos já usados pelo rdf
 
     def test_the_tesseract_is_bundled_as_plain_files_with_the_filter(self):
-        self.assertIn('bundle_rules.tesseract_files(TESSERACT_DIR)', SPEC)
+        self.assertIn('tesseract = bundle_rules.tesseract_toc(TESSERACT_DIR)', SPEC)
+        self.assertIn('a.datas + tesseract', SPEC)  # depois da análise: sem DLLs repetidas na pasta principal
+        self.assertNotIn('tesseract_files(TESSERACT_DIR)', SPEC)
         self.assertIn('a.binaries = bundle_rules.filter_toc(a.binaries)', SPEC)
         self.assertIn('a.datas = bundle_rules.filter_toc(a.datas)', SPEC)
         self.assertIn("(ICON, 'assets')", SPEC)

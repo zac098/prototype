@@ -340,7 +340,8 @@ class RegistryTests(unittest.TestCase):
         found = [t.id for t in search_tools('imprimir')]
         self.assertEqual(found[0], 'merge')  # imprimir fica em Unir; as outras só ajudam a preparar a impressão
         self.assertLessEqual(set(found), {'merge', 'grayscale'})
-        self.assertIn('imprima', TOOLS_BY_ID['merge'].description)
+        self.assertIn('imprimir', TOOLS_BY_ID['merge'].description)  # e diz que é pelo Edge
+        self.assertIn('Edge', TOOLS_BY_ID['merge'].description)
 
 
 if __name__ == '__main__':

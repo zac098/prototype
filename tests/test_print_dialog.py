@@ -99,6 +99,7 @@ class QtPrintCase(unittest.TestCase):
 
         dialog = PrintDialog(pdf, 'teste', None, printers=printers)
         self.addCleanup(dialog.deleteLater)
+        self.addCleanup(dialog.release)  # antes de apagar a pasta temporária: no Windows, PDF aberto não se apaga
         return dialog
 
 
@@ -227,6 +228,7 @@ class MergeFlowTests(QtPrintCase):
             seen['title'] = title
             dialog.exec = lambda: 1
             dialog.make_printer = self.printer
+            seen['dialog'] = dialog
             return dialog
 
         with mock.patch.object(page, 'make_preview_dialog', side_effect=make_preview):
@@ -235,6 +237,9 @@ class MergeFlowTests(QtPrintCase):
         self.assertEqual(len(self.output()), 2)  # 4 páginas, 2 por folha
         self.assertIn('4 página(s) em 2 folha(s)', page.message.text())
         self.assertFalse(page.print_folder.exists())
+        # o PDF da prévia foi fechado antes de a cópia temporária ser apagada (no Windows, aberto não se apaga)
+        self.assertIsNone(seen['dialog'].document)
+        seen['dialog'].deleteLater()
 
     def test_cancelling_the_preview_prints_nothing(self):
         from rdf.core import settings
@@ -338,9 +343,10 @@ class PrintGoesToEdgeTests(QtPrintCase):
             page.print_files()
         preview.assert_not_called()  # nada de tela intermediária
         self.assertEqual(launched[0][0], 'msedge.exe')
-        from urllib.parse import unquote, urlparse
+        from urllib.parse import urlparse
+        from urllib.request import url2pathname
 
-        pdf = Path(unquote(urlparse(launched[0][1]).path))
+        pdf = Path(url2pathname(urlparse(launched[0][1]).path))  # file:///C:/... vira C:\... no Windows
         with fitz.open(pdf) as document:
             self.assertEqual(document.page_count, 3)  # os dois arquivos juntados, na ordem
         self.assertIn('Ctrl+P', page.message.text())

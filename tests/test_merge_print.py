@@ -1,4 +1,4 @@
-"""Unir PDF com o botão Imprimir (janela de impressão do Windows) e a impressão por QPrinter."""
+"""Unir PDF com o botão Imprimir: a tela de impressão do RDF (quando não há Edge) e a impressão por QPrinter."""
 
 import tempfile
 import unittest

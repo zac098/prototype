@@ -53,8 +53,9 @@ for package in ('cv2', 'fitz', 'pymupdf'):
     datas += package_datas
     binaries += package_binaries
     hiddenimports += package_hidden
-# O Tesseract roda como programa à parte: entra como arquivos comuns, sem o PyInstaller analisar as DLLs dele.
-datas += [(str(source), dest) for source, dest in bundle_rules.tesseract_files(TESSERACT_DIR)]
+# O Tesseract roda como programa à parte, da pasta dele: entra no pacote só depois da análise (senão o PyInstaller
+# copiava as DLLs dele também para a pasta principal, como se o Python precisasse delas).
+tesseract = bundle_rules.tesseract_toc(TESSERACT_DIR)
 
 a = Analysis(
     [str(ROOT / 'rdf_app.py')],
@@ -106,6 +107,6 @@ version_info = windows_version_info() if sys.platform == 'win32' else None
 common = dict(console=False, icon=ICON, version=version_info, upx=False, disable_windowed_traceback=False)
 
 installed = EXE(pyz, a.scripts, [], exclude_binaries=True, name='RDF', **common)
-COLLECT(installed, a.binaries, a.datas, name='RDF', upx=False)
+COLLECT(installed, a.binaries, a.datas + tesseract, name='RDF', upx=False)
 
-EXE(pyz, a.scripts, a.binaries, a.datas, [], name='RDF_portatil', **common)
+EXE(pyz, a.scripts, a.binaries, a.datas + tesseract, [], name='RDF_portatil', **common)

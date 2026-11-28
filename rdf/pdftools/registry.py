@@ -201,7 +201,7 @@ TOOLS = (
     _tool(
         'merge',
         'Unir PDF',
-        'Junte vários PDFs (ou fotos e documentos) em um único arquivo, na ordem que você escolher, ou imprima a lista direto pela janela de impressão do Windows.',
+        'Junte vários PDFs (ou fotos e documentos) em um só arquivo, na ordem que você escolher, ou abra tudo junto no Edge para imprimir.',
         'Organizar',
         '+',
         _run_merge,

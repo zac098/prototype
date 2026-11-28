@@ -347,6 +347,8 @@ class PrintDialog(QDialog):
         self.refresh_preview()
 
     def refresh_preview(self):
+        if self.document is None:  # já fechado (a janela terminou): não há o que desenhar
+            return
         sheets = self.sheets()
         self.sheet_index = max(0, min(self.sheet_index, len(sheets) - 1))
         settings = self.settings()
@@ -380,10 +382,15 @@ class PrintDialog(QDialog):
             printer.setDocName(self.title)
         return printer
 
-    def done(self, result):
+    def release(self):
+        """Fecha o PDF aberto para a prévia: o PDF temporário da impressão pode ser apagado depois (no Windows, um
+        arquivo aberto não pode ser apagado)."""
         self._preview_timer.stop()
         if self.document is not None:
             with FITZ_LOCK:
-                self.document.close()  # solta o arquivo: o PDF temporário da impressão pode ser apagado depois
+                self.document.close()
             self.document = None
+
+    def done(self, result):
+        self.release()
         super().done(result)
