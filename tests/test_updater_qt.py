@@ -120,11 +120,16 @@ class ControllerTests(QtCase):
         """A procura roda numa thread "daemon": fechar o RDF não espera a conexão (com um QThreadPool, o fechamento
         ficava travado até o tempo limite da rede)."""
         gate = threading.Event()
-        controller = self.controller(lambda: gate.wait(5))
+
+        def slow_network():
+            gate.wait(5)  # e no fim nada de novo (None)
+
+        controller = self.controller(slow_network)
         controller.check(manual=False)
         self.assertTrue(controller._thread.daemon)
         gate.set()
         self.assertTrue(wait_until(lambda: not controller.checking))
+        self.assertEqual(self.events, [])  # procura automática sem novidade: silêncio
 
     def test_two_requests_at_once_make_one_check(self):
         gate = threading.Event()

@@ -194,11 +194,48 @@ class EntryPointTests(unittest.TestCase):
             match,
             'PySide6-Essentials precisa estar fixado em requirements.txt (sem o metapacote PySide6: WebEngine e outros pesam centenas de MB)',
         )
+        self.assertNotEqual(match.group(1), '6.12.0')  # veja os dois testes abaixo
+        self.assertNotRegex(requirements, r'(?m)^PySide6[=<>~ ]')
         if self.HAS_QT:
             from importlib.metadata import version
 
             self.assertEqual(version('PySide6_Essentials'), match.group(1))
         self.assertFalse((ROOT / 'requirements-qt.txt').exists())  # agora é parte de requirements.txt
+
+    @unittest.skipUnless(HAS_QT, 'PySide6 não instalado')
+    def test_widgets_in_a_row_built_apart_belong_to_the_window(self):
+        """PySide6 6.12.0: um widget posto num layout montado à parte (row = QHBoxLayout(); row.addWidget(...);
+        layout.addLayout(row), como em quase todas as telas do RDF) continuava marcado como "do Python" mesmo dentro
+        da janela. Ao fechar, a limpeza do PySide6 apagava esses widgets de novo, em ordem qualquer, e o processo
+        caía de vez em quando (no CI: falha de segmentação, "pure virtual method called" ou código 127)."""
+        from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+        from shiboken6 import Shiboken
+
+        QApplication.instance() or QApplication([])
+        window = QWidget()
+        layout = QVBoxLayout(window)
+        row = QHBoxLayout()
+        label = QLabel('linha montada à parte')
+        row.addWidget(label)
+        layout.addLayout(row)
+        self.assertIs(label.parent(), window)
+        self.assertFalse(Shiboken.ownedByPython(label))  # quem apaga é a janela, uma vez só
+
+    @unittest.skipUnless(HAS_QT, 'PySide6 não instalado')
+    def test_emitting_signals_never_eats_references_to_true(self):
+        """PySide6 6.12.0 no Python 3.11: Signal.emit() devolvia o True sem contar a referência. Depois de umas duas mil
+        emissões o processo caía ("bool_dealloc"); no CI, ao fechar, com todos os testes já aprovados. No Python 3.12+
+        o True é imortal e a conta nunca muda."""
+        from PySide6.QtCore import QObject, Signal
+
+        class Emitter(QObject):
+            pinged = Signal()
+
+        emitter = Emitter()
+        before = sys.getrefcount(True)
+        for _ in range(1000):
+            emitter.pinged.emit()
+        self.assertGreater(sys.getrefcount(True) - before, -100)  # folga para outras threads; o defeito dá -1000
 
 
 if __name__ == '__main__':

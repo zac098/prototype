@@ -6,6 +6,7 @@ Cada diálogo é modal: o teste agenda a "mão do usuário" (preencher, clicar) 
 import importlib.util
 import os
 import unittest
+import weakref
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
@@ -32,7 +33,7 @@ def when_open(action, seconds=5):
     attempts = {'left': 200}
 
     def close_if_still_open(dialog):
-        if dialog.isVisible():
+        if dialog is not None and dialog.isVisible():
             HAND_ERRORS.append(AssertionError('o diálogo continuou aberto depois da ação'))
             dialog.reject()
 
@@ -45,7 +46,9 @@ def when_open(action, seconds=5):
                 HAND_ERRORS.append(exc)
                 dialog.reject()
                 return
-            QTimer.singleShot(int(seconds * 1000), lambda: close_if_still_open(dialog))
+            # Referência fraca: o vigia não segura o diálogo vivo depois do teste (nem até o fim da suíte).
+            watched = weakref.ref(dialog)
+            QTimer.singleShot(int(seconds * 1000), lambda: close_if_still_open(watched()))
         elif attempts['left'] > 0:
             attempts['left'] -= 1
             QTimer.singleShot(10, check)

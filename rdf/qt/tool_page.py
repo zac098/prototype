@@ -12,7 +12,7 @@ import weakref
 from pathlib import Path
 from types import SimpleNamespace
 
-from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -198,6 +198,8 @@ class ToolPage(QWidget):
         self.options_card = self._build_options_card()
         layout.addWidget(self.files_card, 1)
         layout.addWidget(self.options_card, 0)
+        # Onde a barra de botões cabe depende da largura do cartão (não da tela): confere a cada mudança dele.
+        self.files_card.installEventFilter(self)
         self._connect_picker()
         self.refresh_files()
 
@@ -1055,5 +1057,8 @@ class ToolPage(QWidget):
             self.preview_side.setVisible(not narrow)
             self.arrange_bar(narrow)
             self.options_card.setFixedWidth(OPTIONS_NARROW if narrow else OPTIONS_WIDTH)
-        else:
+
+    def eventFilter(self, watched, event):
+        if watched is self.files_card and event.type() == QEvent.Resize:
             self.fit_bar()
+        return super().eventFilter(watched, event)

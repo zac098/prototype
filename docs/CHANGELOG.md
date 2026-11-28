@@ -31,10 +31,13 @@
 - Salvar a sessão do renomeador falhava se a pasta de dados fosse apagada com o app aberto.
 - Fechar o RDF nunca espera a rede (uma procura de atualização lenta não segura o fechamento).
 - Os textos do "Unir PDF" ainda falavam da janela de impressão do Windows.
+- Numa janela média, os botões do "Unir PDF" e do "Imagem para PDF" apareciam cortados ("Adicion", "Limpar tu"). Agora eles descem para a linha de baixo quando não cabem ao lado do contador.
+- **Biblioteca da interface (PySide6) de volta à versão 6.11.3.** A 6.12.0 tinha dois defeitos de memória. Num deles, os botões e textos montados em linhas separadas não passavam a pertencer à janela, e a limpeza no fechamento podia apagá-los duas vezes e derrubar o processo. No outro, só no Python 3.11, cada aviso entre as partes da tela gastava uma referência interna do Python, e depois de muito uso o app fechava sozinho. Os testes acusam os dois se voltarem.
 
 ### Por dentro
 - **Autoteste do executável** (`RDF.exe --autoteste resultado.json`): confere as bibliotecas, uma leitura real do Tesseract embutido, as ferramentas de PDF, a conexão segura e todas as telas. Roda no build de cada versão; se falhar, a versão não é publicada.
 - O CI do Windows escondia falhas dos testes (no PowerShell só o último comando contava). Agora o lint e os testes rodam em bash nos dois sistemas, e os testes da impressão não abrem mais o Microsoft Edge de verdade.
+- O CI caía de vez em quando no fim dos testes, com todos aprovados: era o PySide6 6.12.0 (veja Correções). A barra de botões das ferramentas também passou a decidir onde fica pela largura do próprio cartão, que no Windows pode mudar depois da janela.
 - Receita do PyInstaller em `packaging/rdf.spec`, com o que fica de fora explicado em `packaging/bundle_rules.py`. OpenCV na versão sem interface gráfica.
 
 ## 4.0.2

@@ -332,9 +332,12 @@ class ToolPageTests(QtTestCase):
         self.assertTrue(page._bar_stacked)
         for button in page.bar_buttons.findChildren(type(page.add_button)):
             self.assertGreaterEqual(button.width(), button.sizeHint().width(), button.text())
-        self.window.resize(1500, 800)
+        self.window.resize(2400, 900)  # bem larga: a conta não depende da fonte de cada sistema
         self.app.processEvents()
         self.assertFalse(page._bar_stacked)  # com espaço, voltam para o lado do contador
+        self.window.resize(1100, 700)
+        self.app.processEvents()
+        self.assertTrue(page._bar_stacked)  # e descem de novo quando a janela volta a ficar média
 
     def test_same_named_files_from_different_folders_get_different_destinations(self):
         page = self.window.open_tool('compress')
