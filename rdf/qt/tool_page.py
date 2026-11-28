@@ -390,16 +390,8 @@ class ToolPage(QWidget):
         return page
 
     def arrange_bar(self, narrow):
-        """Largo: contador à esquerda e botões à direita, na mesma linha. Estreito: contador em cima e botões
-        embaixo, com textos curtos (senão os botões ficam cortados)."""
-        self.bar.removeWidget(self.counter)
-        self.bar.removeWidget(self.bar_buttons)
-        if narrow:
-            self.bar.addWidget(self.counter, 0, 0, 1, 2)
-            self.bar.addWidget(self.bar_buttons, 1, 0, 1, 2, Qt.AlignRight)
-        else:
-            self.bar.addWidget(self.counter, 0, 0)
-            self.bar.addWidget(self.bar_buttons, 0, 1, Qt.AlignRight)
+        """Textos dos botões: curtos na janela estreita. Onde a barra fica (ao lado do contador ou embaixo dele)
+        depende de caber, não só da largura da janela: veja fit_bar."""
         multiple = self.tool.multiple
         self.add_button.setText(
             ('Adicionar' if narrow else 'Adicionar mais') if multiple else ('Trocar' if narrow else 'Trocar arquivo')
@@ -407,6 +399,29 @@ class ToolPage(QWidget):
         self.clear_button.setText('Limpar' if narrow else 'Limpar tudo')
         for button in self.bar_buttons.findChildren(QPushButton):
             button.setMinimumWidth(button.sizeHint().width())  # nunca menor que o próprio texto
+        self._bar_stacked = None  # os botões mudaram de tamanho: confere de novo onde a barra cabe
+        self.fit_bar(force_stacked=narrow)
+
+    def fit_bar(self, force_stacked=None):
+        """Contador e botões na mesma linha quando cabem; senão, os botões descem para a linha de baixo (as setas e
+        os ícones deixam a barra do Unir PDF larga: numa janela média os botões ficavam cortados)."""
+        if force_stacked is None:
+            force_stacked = self.narrow
+        card = getattr(self, 'files_card', None)
+        available = card.contentsRect().width() - 36 if card is not None else 10**6  # margens internas do cartão
+        needed = self.counter.sizeHint().width() + self.bar.horizontalSpacing() + self.bar_buttons.sizeHint().width()
+        stacked = bool(force_stacked) or needed > available
+        if stacked == getattr(self, '_bar_stacked', None):
+            return
+        self._bar_stacked = stacked
+        self.bar.removeWidget(self.counter)
+        self.bar.removeWidget(self.bar_buttons)
+        if stacked:
+            self.bar.addWidget(self.counter, 0, 0, 1, 2)
+            self.bar.addWidget(self.bar_buttons, 1, 0, 1, 2, Qt.AlignRight)
+        else:
+            self.bar.addWidget(self.counter, 0, 0)
+            self.bar.addWidget(self.bar_buttons, 0, 1, Qt.AlignRight)
 
     def _build_options_card(self):
         tool = self.tool
@@ -726,6 +741,7 @@ class ToolPage(QWidget):
             if self.tool.inputs == 'pdf' and total_pages:
                 extra = f'  ·  {total_pages} {"página" if total_pages == 1 else "páginas"}'
             self.counter.setText(f'{len(self.files)} {noun}{extra}')
+            self.fit_bar()  # um contador maior ("120 arquivos · 3400 páginas") pode empurrar os botões para baixo
             self.files_stack.setCurrentIndex(1)
             self.tree.setCurrentItem(self.tree.topLevelItem(0))
         else:
@@ -1039,3 +1055,5 @@ class ToolPage(QWidget):
             self.preview_side.setVisible(not narrow)
             self.arrange_bar(narrow)
             self.options_card.setFixedWidth(OPTIONS_NARROW if narrow else OPTIONS_WIDTH)
+        else:
+            self.fit_bar()

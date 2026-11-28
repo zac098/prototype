@@ -320,6 +320,22 @@ class ToolPageTests(QtTestCase):
         self.assertFalse(page.narrow)
         self.assertEqual(page.add_button.text(), 'Adicionar mais')
 
+    def test_the_buttons_go_below_the_counter_when_they_do_not_fit(self):
+        """Regressão: com as setas e os ícones, a barra do Unir PDF ficava larga demais numa janela média (1100 px) e
+        os botões apareciam cortados ("Adicion", "Limpar tu"). Agora eles descem para baixo do contador."""
+        page = self.window.open_tool('merge')
+        page.add_paths([str(make_pdf(self.tmp / 'a.pdf'))])
+        self.window.resize(1100, 700)
+        self.app.processEvents()
+        self.assertFalse(page.narrow)  # ainda é a janela "larga": textos inteiros
+        self.assertEqual(page.add_button.text(), 'Adicionar mais')
+        self.assertTrue(page._bar_stacked)
+        for button in page.bar_buttons.findChildren(type(page.add_button)):
+            self.assertGreaterEqual(button.width(), button.sizeHint().width(), button.text())
+        self.window.resize(1500, 800)
+        self.app.processEvents()
+        self.assertFalse(page._bar_stacked)  # com espaço, voltam para o lado do contador
+
     def test_same_named_files_from_different_folders_get_different_destinations(self):
         page = self.window.open_tool('compress')
         page.add_paths([str(make_pdf(self.tmp / folder / 'doc.pdf')) for folder in ('x', 'y', 'z')])
