@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -77,6 +78,15 @@ def paint_tile(painter, rect, tool, fill, ink):
         font.setPixelSize(max(6, int(rect.width() * 0.36)))
         painter.setFont(font)
         painter.drawText(rect, Qt.AlignCenter, tool.glyph)
+
+
+class SpinBox(QSpinBox):
+    """Campo de número do RDF. No estilo Fusion, o espaço interno da folha de estilo não chega ao texto do QSpinBox (o
+    número ficava colado na borda esquerda): a margem vai direto no campo de texto."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.lineEdit().setTextMargins(6, 0, 0, 0)
 
 
 KEYBOARD_FOCUS = (Qt.TabFocusReason, Qt.BacktabFocusReason, Qt.ShortcutFocusReason)

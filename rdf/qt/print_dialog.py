@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from rdf.core.fitz_lock import FITZ_LOCK
 from rdf.pdftools import printing
 from rdf.pdftools.pages import PageRangeError, parse_page_ranges
+from rdf.qt.widgets import SpinBox
 
 PREVIEW_WIDTH = 460
 PREVIEW_HEIGHT = 600
@@ -184,7 +185,7 @@ class PrintDialog(QDialog):
         form.addRow('Impressora', self.printer_combo)
 
         copies_row = QHBoxLayout()
-        self.copies_spin = QSpinBox()
+        self.copies_spin = SpinBox()
         self.copies_spin.setRange(1, 99)
         self.collate_check = QCheckBox('Agrupar')
         self.collate_check.setChecked(True)
@@ -209,7 +210,7 @@ class PrintDialog(QDialog):
         form.addRow('Por folha', self.per_sheet_combo)
         self.scale_combo = _combo(SCALES)
         form.addRow('Escala', self.scale_combo)
-        self.percent_spin = QSpinBox()
+        self.percent_spin = SpinBox()
         self.percent_spin.setRange(10, 400)
         self.percent_spin.setValue(100)
         self.percent_spin.setSuffix(' %')

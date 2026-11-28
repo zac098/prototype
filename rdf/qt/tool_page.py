@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QSpinBox,
     QStackedWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -42,7 +41,7 @@ from rdf.qt import icons
 from rdf.qt.busy import Responsive
 from rdf.qt.page_picker import PagePicker
 from rdf.qt.thumbnails import ThumbnailLoader
-from rdf.qt.widgets import BackButton, DropIcon, SmoothScrollArea, ToolTile
+from rdf.qt.widgets import BackButton, DropIcon, SmoothScrollArea, SpinBox, ToolTile
 
 PREVIEW_SIZE = (230, 300)
 OPTIONS_WIDTH = 380
@@ -513,7 +512,7 @@ class ToolPage(QWidget):
                 widget.setCurrentText(str(default))
                 getter, signal = widget.currentText, widget.currentTextChanged
             elif option.kind == 'int':
-                widget = QSpinBox()
+                widget = SpinBox()
                 widget.setRange(0, 100000)
                 widget.setValue(int(default or 0))
                 getter, signal = widget.value, widget.valueChanged

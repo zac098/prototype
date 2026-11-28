@@ -13,12 +13,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
 )
 
 from rdf.core.naming import safe_filename
 from rdf.core.parsing import MONTH_OPTIONS
+from rdf.qt.widgets import SpinBox
 
 
 def _dialog(parent, title, width=460):
@@ -76,7 +76,7 @@ def multipage_dialog(parent, path, total):
     inner.addWidget(QLabel('Manter o PDF completo'))
     row = QHBoxLayout()
     row.addWidget(QLabel('Página usada para identificar os dados:'))
-    spin = QSpinBox()
+    spin = SpinBox()
     spin.setRange(1, total)
     row.addWidget(spin)
     row.addStretch(1)
