@@ -37,8 +37,8 @@ class MergePage(ToolPage):
         shortcut = QShortcut(QKeySequence('Ctrl+P'), self, activated=self.print_files)
         shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.print_hint = QLabel(
-            '"Unir PDF" salva o PDF juntado onde você escolher. "Imprimir" junta e abre no Edge para imprimir '
-            '(Ctrl+P): nada fica salvo.'
+            '"Unir PDF" salva o PDF juntado onde você escolher. "Imprimir" junta e abre no Edge, já pedindo a janela '
+            'de impressão (se ela não abrir, Ctrl+P): nada fica salvo.'
         )
         self.print_hint.setObjectName('hint')
         self.print_hint.setWordWrap(True)
@@ -207,12 +207,17 @@ class MergePage(ToolPage):
         folder.mkdir(parents=True, exist_ok=True)
         copy = folder / f'imprimir-{uuid.uuid4().hex[:6]}.pdf'
         shutil.copyfile(pdf, copy)
+        asked = printing.add_print_on_open(copy)  # o Edge já abre pedindo a janela de impressão
         try:
             (launcher or subprocess.Popen)([edge or 'msedge', copy.as_uri()])
         except OSError as exc:
             self.set_message(f'Não foi possível abrir o Edge: {exc}', 'error')
             return
-        self.set_message('Aberto no Edge: aperte Ctrl+P lá para imprimir. Nada fica salvo no computador.', 'ok')
+        if asked:
+            text = 'Aberto no Edge: a janela de impressão abre sozinha (se não abrir, aperte Ctrl+P).'
+        else:
+            text = 'Aberto no Edge: aperte Ctrl+P lá para imprimir.'
+        self.set_message(f'{text} Nada fica salvo no computador.', 'ok')
         return copy
 
     def _print_with_windows(self, pdf, total, title):

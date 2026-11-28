@@ -4,10 +4,14 @@
 
 ### Mais rápido e mais leve
 - **Abre bem mais rápido.** O RDF instalado agora é uma pasta, e não mais um arquivo único de 200 MB que era descompactado inteiro a cada abertura. A tela inicial também deixou de carregar o OCR, o OpenCV e o PyMuPDF: eles são preparados em segundo plano logo depois que a janela aparece, e a primeira ferramenta abre sem espera.
+- **Renomeador mais rápido em computadores com mais núcleos**: lê até 8 folhas ao mesmo tempo (antes, sempre 4), deixando um núcleo livre para a janela. Nas 20 folhas de teste, cada leitura a mais em paralelo encurta o tempo quase na mesma proporção (1 de cada vez: 67 s; 4: 20 s).
 - **Download bem menor**: o instalador caiu de 197 MB para 77 MB, e a versão portátil de 206 MB para 109 MB. Saíram do pacote cópias repetidas das bibliotecas do Tesseract, programas de treino do Tesseract, OpenGL por software, vídeo do OpenCV, suporte a AVIF, traduções que não são pt-BR e arquivos de desenvolvimento.
 
 ### Atualização dentro do app
 - O RDF avisa na tela inicial quando sai uma versão nova. **Atualizar…** mostra as novidades, baixa o instalador, confere que ele chegou inteiro (soma SHA-256 publicada na versão), fecha o RDF com as perguntas de sempre e instala, abrindo o app de novo no fim, com as mesmas configurações. Também em Ajuda > Procurar atualizações, no Sobre e nas Configurações, onde a procura automática pode ser desligada. A procura só consulta o GitHub do RDF: nada seu é enviado. Na versão portátil, o aviso abre a página da versão.
+
+### Imprimir
+- **Imprimir** (no "Unir PDF") abre o Edge já pedindo a janela de impressão: é só escolher a impressora e imprimir. Se ela não abrir sozinha, o Ctrl+P continua valendo. O pedido vai só na cópia temporária: os seus arquivos e o PDF salvo pelo "Unir PDF" ficam como estão.
 
 ### Visual mais limpo
 - **Ícones novos**, desenhados para o RDF: nítidos em qualquer escala de tela e iguais em qualquer Windows.
@@ -18,6 +22,8 @@
 ### Correções
 - Depois de vários "Imprimir com o RDF" seguidos, a janela do RDF podia **fechar sozinha**: o canal entre os processos reaproveitava um objeto já apagado.
 - A janela de Configurações cortava os textos e espremia o botão Fechar.
+- Corrigir dados (renomeador): um mês fora da lista ("MARCO" sem cedilha, de uma sessão antiga) aparecia em branco e era apagado ao salvar a correção do nome. E uma correção com todos os campos vazios virava "CORRIGIDO" com o nome original: agora "Salvar correção" só funciona com algum campo preenchido.
+- Na tela vazia do renomeador, o título ficava por cima da dica.
 - Imprimir pela tela do RDF (sem o Edge) deixava a cópia temporária para trás no Windows, porque o PDF da prévia ficava aberto.
 - Salvar a sessão do renomeador falhava se a pasta de dados fosse apagada com o app aberto.
 - Fechar o RDF nunca espera a rede (uma procura de atualização lenta não segura o fechamento).
