@@ -8,7 +8,7 @@ import platform
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -118,14 +119,29 @@ class SettingsDialog(QDialog):
     themeChanged = Signal(str)
     updatesRequested = Signal()
 
+    WIDTH = 580
+
     def __init__(self, parent=None, tesseract=None):
         super().__init__(parent)
         self.setWindowTitle('Configurações')
         self.setModal(True)
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(self.WIDTH)
         prefs = settings.current()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 20)
+        # O conteúdo rola dentro da janela: textos com quebra de linha não ficam cortados e a janela cabe em telas
+        # baixas (notebooks com 768 px de altura).
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 20)
+        outer.setSpacing(12)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.content = QWidget()
+        self.content.setObjectName('optionsContent')
+        self.scroll.setWidget(self.content)
+        outer.addWidget(self.scroll, 1)
+        layout = QVBoxLayout(self.content)
+        layout.setContentsMargins(24, 22, 24, 4)
         layout.setSpacing(12)
         layout.addWidget(_title('Configurações'))
 
@@ -208,15 +224,28 @@ class SettingsDialog(QDialog):
         buttons.addStretch(1)
         layout.addLayout(buttons)
 
-        layout.addSpacing(6)
+        layout.addStretch(1)
         close_row = QHBoxLayout()
+        close_row.setContentsMargins(24, 0, 24, 0)
         close_row.addStretch(1)
         close = QPushButton('Fechar')
         close.setProperty('variant', 'primary')
         close.setDefault(True)
         close.clicked.connect(self.accept)
         close_row.addWidget(close)
-        layout.addLayout(close_row)
+        outer.addLayout(close_row)
+        self.fit_height()
+
+    def fit_height(self):
+        """Altura certa para a largura da janela (os textos quebram em várias linhas), sem passar da tela."""
+        inner = self.WIDTH - 48
+        layout = self.content.layout()
+        needed = layout.totalHeightForWidth(inner) if layout.hasHeightForWidth() else layout.sizeHint().height()
+        height = needed + 90  # botão Fechar e margens
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            height = min(height, screen.availableGeometry().height() - 60)
+        self.resize(self.WIDTH, max(360, height))
 
     def _on_theme(self, index):
         value = self.theme_combo.itemData(index)

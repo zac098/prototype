@@ -13,7 +13,7 @@ import subprocess
 import sys
 import threading
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
@@ -49,11 +49,10 @@ class _Signals(QObject):
     progress = Signal(object, object)  # baixados, total (bytes)
 
 
-class _Job(QRunnable):
-    """Roda function(progresso) numa thread e responde pelos sinais. Nunca deixa um erro derrubar o app."""
+class _Job:
+    """Roda function(progresso) e responde pelos sinais. Nunca deixa um erro derrubar o app."""
 
     def __init__(self, signals, function):
-        super().__init__()
         self.signals, self.function = signals, function
 
     def run(self):
@@ -70,6 +69,14 @@ class _Job(QRunnable):
             self.signals.done.emit(result)
 
 
+def run_in_background(signals, function, name='rdf-atualizacao'):
+    """Roda o trabalho numa thread "daemon": se o usuário fechar o RDF no meio (uma rede lenta pode levar até o tempo
+    limite para responder), o app fecha na hora, sem esperar a conexão. Um QThreadPool seguraria o fechamento."""
+    thread = threading.Thread(target=_Job(signals, function).run, name=name, daemon=True)
+    thread.start()
+    return thread
+
+
 class UpdateController(QObject):
     """Procura versões novas. available(release) traz a versão encontrada; upToDate e failed(mensagem) só respondem
     às procuras pedidas pelo usuário (a automática não incomoda ninguém se não houver novidade ou internet)."""
@@ -84,8 +91,7 @@ class UpdateController(QObject):
         self.checking = False
         self._manual = False
         self._check = check or (lambda: updates.check())
-        self._pool = QThreadPool(self)
-        self._pool.setMaxThreadCount(1)
+        self._thread = None
         self._signals = _Signals()
         self._signals.done.connect(self._on_done)
         self._signals.failed.connect(self._on_failed)
@@ -108,7 +114,8 @@ class UpdateController(QObject):
         if self.checking:
             return False
         self.checking = True
-        self._pool.start(_Job(self._signals, lambda _progress: self._check()))
+        check = self._check
+        self._thread = run_in_background(self._signals, lambda _progress: check())
         return True
 
     def _on_done(self, release):
@@ -194,8 +201,7 @@ class UpdateDialog(QDialog):
         self._download = download or updates.download_installer
         self._folder = folder or DOWNLOAD_DIR
         self._cancel = threading.Event()
-        self._pool = QThreadPool(self)
-        self._pool.setMaxThreadCount(1)
+        self._thread = None
         self._signals = _Signals()  # sem pai: se a janela fechar no meio, o download ainda tem onde avisar
         self._signals.done.connect(self._on_downloaded)
         self._signals.failed.connect(self._on_failed)
@@ -295,8 +301,10 @@ class UpdateDialog(QDialog):
         self.progress.setValue(0)
         self.progress.show()
         self.set_status('Baixando…')
-        release, folder, cancel = self.release, self._folder, self._cancel
-        self._pool.start(_Job(self._signals, lambda progress: self._download(release, folder, progress, cancel.is_set)))
+        release, folder, cancel, download = self.release, self._folder, self._cancel, self._download
+        self._thread = run_in_background(
+            self._signals, lambda progress: download(release, folder, progress, cancel.is_set), 'rdf-download'
+        )
 
     def _on_progress(self, done, total):
         if total:
@@ -332,8 +340,10 @@ class UpdateDialog(QDialog):
         super().reject()
 
     def wait_download(self, timeout_ms=30000):
-        """Espera o download terminar (testes e fechamento)."""
-        return self._pool.waitForDone(timeout_ms)
+        """Espera o download terminar (testes). True se ele terminou."""
+        if self._thread is not None:
+            self._thread.join(timeout_ms / 1000)
+        return self._thread is None or not self._thread.is_alive()
 
 
 def launch_installer(installer):

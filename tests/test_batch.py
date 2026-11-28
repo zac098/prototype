@@ -271,6 +271,17 @@ class SessionTests(TempCase):
         self.assertEqual(again.status(a), 'OK')
         self.assertEqual(again.status(again.files[1]), 'Pendente')
 
+    def test_the_session_is_saved_even_if_the_data_folder_was_deleted(self):
+        """Regressão: com a pasta de dados apagada (limpeza do Windows, antivírus), salvar a sessão falhava calado."""
+        import shutil
+
+        lote = batch.Batch()
+        lote.load([make_pdf(self.tmp / 'a.pdf')])
+        lote.accept_row(batch.row_from_result(lote.files[0], timesheet_result(), lote.options, 'PDF', {}))
+        shutil.rmtree(config.SESSION_FILE.parent)
+        self.assertTrue(lote.save_session())
+        self.assertTrue(config.SESSION_FILE.exists())
+
     def test_old_sessions_with_unknown_chapa_origin_go_back_to_review(self):
         pdf = make_pdf(self.tmp / 'a.pdf')
         data = {'files': [pdf], 'rows': [{'path': pdf, 'status': 'OK', 'chapa_source': 'desconhecida'}]}

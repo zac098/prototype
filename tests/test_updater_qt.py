@@ -116,6 +116,16 @@ class ControllerTests(QtCase):
         controller.check_automatically()
         self.assertTrue(wait_until(lambda: calls))
 
+    def test_a_slow_network_never_holds_the_app_from_closing(self):
+        """A procura roda numa thread "daemon": fechar o RDF não espera a conexão (com um QThreadPool, o fechamento
+        ficava travado até o tempo limite da rede)."""
+        gate = threading.Event()
+        controller = self.controller(lambda: gate.wait(5))
+        controller.check(manual=False)
+        self.assertTrue(controller._thread.daemon)
+        gate.set()
+        self.assertTrue(wait_until(lambda: not controller.checking))
+
     def test_two_requests_at_once_make_one_check(self):
         gate = threading.Event()
         calls = []
@@ -215,6 +225,7 @@ class DialogTests(QtCase):
 
         dialog = self.dialog(download=download)
         dialog.primary.click()
+        self.assertTrue(dialog._thread.daemon)  # fechar o RDF no meio do download não trava
         self.assertEqual(dialog.secondary.text(), 'Cancelar')
         dialog.secondary.click()
         self.assertTrue(wait_until(lambda: dialog.state == 'idle'))

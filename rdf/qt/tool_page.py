@@ -275,7 +275,7 @@ class ToolPage(QWidget):
             hint.setText(hint.text() + '\nAceita PDF, imagens, textos, HTML e documentos do Word, Excel e PowerPoint.')
             hint.setWordWrap(True)
             hint.setAlignment(Qt.AlignCenter)
-            hint.setMaximumWidth(420)
+            hint.setFixedWidth(400)  # largura fixa: com quebra de linha, o Qt deixava o texto numa coluna estreita
         hint.setObjectName('hint')
         layout.addWidget(hint, 0, Qt.AlignHCenter)
         layout.addStretch(1)
